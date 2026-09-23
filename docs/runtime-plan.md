@@ -79,9 +79,9 @@ referenced contributions without runtime assembly scanning.
 Planned slices:
 
 1. Emit portable compile-time contribution metadata and a uniquely named generated manifest per
-   assembly. Implemented and awaiting review.
+   assembly. Implemented, verified and approved.
 2. Read referenced contributions inside source-generator analysis and convert all Roslyn symbols
-   to TinyBus-owned models at that boundary.
+   to TinyBus-owned models at that boundary. Implemented, verified and approved.
 3. Generate one deterministic composed manifest in the root assembly.
 4. Report duplicate command/request handlers and conflicting semantics across assemblies.
 5. Combine the composed manifest with an explicitly supplied `ServiceIdentity` to create

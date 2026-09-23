@@ -73,8 +73,43 @@ internal static class SourceGeneratorTestHost
         }
     }
 
+    public static MetadataReference CompileReference(
+        string assemblyName,
+        params string[] sources)
+    {
+        var compilation = CreateCompilation(assemblyName, sources);
+        var driver = CSharpGeneratorDriver.Create(new TinyBusSourceGenerator().AsSourceGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+        AssertCompiles(output);
+
+        using var stream = new MemoryStream();
+        var emitted = output.Emit(stream);
+        Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
+
+        return MetadataReference.CreateFromImage(stream.ToArray());
+    }
+
+    public static CSharpCompilation CreateCompilationWithReferences(
+        string assemblyName,
+        IEnumerable<MetadataReference> references,
+        params string[] sources)
+    {
+        return CreateCompilation(
+            assemblyName,
+            References.AddRange(references),
+            sources);
+    }
+
     private static CSharpCompilation CreateCompilation(
         string assemblyName,
+        params string[] sources)
+    {
+        return CreateCompilation(assemblyName, References, sources);
+    }
+
+    private static CSharpCompilation CreateCompilation(
+        string assemblyName,
+        IEnumerable<MetadataReference> references,
         params string[] sources)
     {
         var trees = sources.Select((source, index) => CSharpSyntaxTree.ParseText(
@@ -87,7 +122,7 @@ internal static class SourceGeneratorTestHost
         return CSharpCompilation.Create(
             assemblyName,
             trees,
-            References,
+            references,
             options);
     }
 

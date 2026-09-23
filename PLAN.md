@@ -175,7 +175,7 @@ Mandatory checkpoint: after drafting the common transport interfaces and before 
 PostgreSQL slice, compare those interfaces against PostgreSQL and at least one broker transport.
 Provider implementation cannot begin until the seam passes that review and the decision is recorded.
 
-### Multi-assembly topology slice 1: portable contributions — implemented, awaiting review
+### Multi-assembly topology slice 1: portable contributions — implemented, verified and approved
 
 Emit one generated assembly contribution per local message descriptor and a deterministic,
 uniquely named public manifest type for that assembly. Contributions use the approved
@@ -192,3 +192,23 @@ Three focused generator tests execute the generated metadata, prove every local 
 points to the same public assembly manifest and verify collision-resistant names. The complete
 solution passes twenty-nine tests with no warnings. The package smoke test also passes against an
 isolated consumer. Referenced contribution analysis and root composition remain slice 2 and 3.
+
+### Multi-assembly topology slice 2: referenced contribution analysis — implemented, verified and approved
+
+Read generated contribution attributes from referenced assemblies inside the Analysis phase and
+convert their Roslyn symbols immediately into `ReferencedMessageContribution`, a TinyBus-owned
+model containing only strings, numbers and TinyBus message semantics. The analyzer ignores ordinary
+references and returns contributions in deterministic assembly and contract order.
+
+Two focused tests compile real producer assemblies through the TinyBus generator, reference their
+emitted binaries from a root compilation and verify complete request metadata, the Roslyn-free model
+boundary and deterministic ordering across assemblies. Root composition and cross-assembly
+diagnostics remain later slices. The complete solution passes thirty-one tests with no warnings.
+
+### Next session
+
+Start with multi-assembly topology slice 3: generate one deterministic composed manifest in the
+root assembly. Compose the local manifest with the distinct public manifests identified by the
+referenced contributions. Use contribution metadata for compile-time reasoning while avoiding
+direct generated references to potentially internal handler types. Keep cross-assembly conflict
+diagnostics in slice 4.
