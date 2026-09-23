@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+    <File Path="WORKING-AGREEMENT.md" />
+    <File Path="PLAN.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/TinyBus/TinyBus.csproj" />
+    <Project Path="src/TinyBus.SourceGen/TinyBus.SourceGen.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TinyBus.Tests/TinyBus.Tests.csproj" />
+    <Project Path="tests/TinyBus.SourceGen.Tests/TinyBus.SourceGen.Tests.csproj" />
+  </Folder>
+</Solution>
