@@ -73,7 +73,7 @@ tests with no warnings.
 
 Approved and committed as `a81b6ab`.
 
-### Slice 5: generated manifest guarantees — implemented, awaiting review
+### Slice 5: generated manifest guarantees — implemented, verified and approved
 
 Lock down the generated manifest behavior before diagnostics: output remains identical when source
 file order changes, multiple local handlers for one event are retained, and an assembly with no
@@ -86,7 +86,7 @@ with no warnings.
 
 Approved and committed as `5ceaf16`.
 
-### Slice 6: contract identity diagnostics — implemented, awaiting review
+### Slice 6: contract identity diagnostics — implemented, verified and approved
 
 Introduced the concrete validation boundary needed by the first two diagnostics. Analysis produces
 Roslyn-free candidate data and scalar source locations; validation converts valid candidates into
@@ -104,7 +104,7 @@ ReportDiagnostics.
 
 Approved and committed as `ae1be71`.
 
-### Slice 7: handler topology diagnostics — implemented, awaiting review
+### Slice 7: handler topology diagnostics — implemented, verified and approved
 
 Validate the complete set of locally valid handlers after individual contract validation. Report
 duplicate command handlers, duplicate request handlers and one CLR message type used with
@@ -118,7 +118,7 @@ complete solution passes twenty-six tests with no warnings.
 
 Approved and committed as `fa24921`.
 
-### Slice 8: compile-time developer experience samples — implemented, awaiting review
+### Slice 8: compile-time developer experience samples — implemented, verified and approved
 
 Add the three planned sample assemblies. Contracts contains ordinary records and one stable
 `[BusContract]` identity. Payments consumes command, event and request messages; Orders independently
@@ -130,8 +130,65 @@ one event descriptor in Orders and command, request-with-response and event desc
 both independently consume the stable `orders.order-placed` contract. No generated topology leaks
 between assemblies.
 
+Approved and committed as `a8c1938`.
+
+### Slice 9: packaged developer experience — implemented, awaiting review
+
+The `TinySuite.TinyBus` package now carries `TinyBus.SourceGen.dll` as a compiler-only analyzer and
+contains its README. A package smoke test creates a unique local package, inspects its assets and
+nuspec, restores an isolated consumer using only one package reference, executes its generated
+manifest and proves the packaged diagnostics by compiling a duplicate command handler and observing
+`TBUS003`. The core package has no runtime package dependencies and the generator never reaches the
+consumer output directory.
+
 ### Later slices — intent only
 
-Events and requests, explicit contract naming, diagnostics and samples will each be sliced before
-implementation. PostgreSQL and all distributed runtime behavior remain outside this bootstrap
-feature.
+The core/source-generator bootstrap is complete. PostgreSQL and all distributed runtime behavior
+remain outside this feature and require a new design and slicing discussion before implementation.
+
+## Next feature: composed topology and distributed runtime
+
+The agreed working plan is persisted in [`docs/runtime-plan.md`](docs/runtime-plan.md). It records
+the multi-assembly composition design, native TinyBus handler execution, the PostgreSQL runtime and
+the proposed `TinyBus.TinyEvents` adapter.
+
+Architectural decision: TinyDispatcher will not execute TinyBus handlers. Its in-process dispatch
+semantics do not represent distributed command and event delivery. TinyBus will own its command,
+event and request execution semantics and generate the required invocation plumbing when that
+runtime slice begins.
+
+`TinyBus.TinyEvents` remains an optional integration package to evaluate and design before coding.
+Its purpose is to reuse the existing TinyEvents outbox implementation; TinyBus core will not depend
+on TinyEvents.
+
+Approved decision: multi-assembly composition will use generated compile-time contribution metadata
+through `BusMessageContributionAttribute`. TinyBus will not use the TinyFlags-style mutable runtime
+registry because topology completeness and cross-assembly conflicts must be known at compilation.
+
+Transport boundary decision: PostgreSQL is the first implementation, not the core abstraction.
+PostgreSQL schema, locks, leases, polling and any optional `LISTEN/NOTIFY` wake-up remain private to
+`TinyBus.PostgreSql`. Correctness cannot depend on notifications, and the first version may omit
+them until measurements justify the optimization. The common seam must also fit a broker-based
+transport before it is stabilized.
+
+Mandatory checkpoint: after drafting the common transport interfaces and before starting the first
+PostgreSQL slice, compare those interfaces against PostgreSQL and at least one broker transport.
+Provider implementation cannot begin until the seam passes that review and the decision is recorded.
+
+### Multi-assembly topology slice 1: portable contributions — implemented, awaiting review
+
+Emit one generated assembly contribution per local message descriptor and a deterministic,
+uniquely named public manifest type for that assembly. Contributions use the approved
+`BusMessageContributionAttribute`; users never declare them manually. Preserve the existing local
+manifest behavior while root composition and referenced-assembly diagnostics remain later slices.
+
+The attribute carries the owning manifest type, contract identity, message type, handler type,
+message kind and optional response type. The public manifest name combines a readable assembly
+name with a stable hash, preventing collisions between assembly names that normalize to the same
+C# identifier. The existing internal manifest remains as a compatibility facade over the new
+public manifest.
+
+Three focused generator tests execute the generated metadata, prove every local contribution
+points to the same public assembly manifest and verify collision-resistant names. The complete
+solution passes twenty-nine tests with no warnings. The package smoke test also passes against an
+isolated consumer. Referenced contribution analysis and root composition remain slice 2 and 3.

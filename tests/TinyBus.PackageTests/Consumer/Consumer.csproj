@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TinySuite.TinyBus" Version="0.1.0-dev" />
+    <Compile Include="InvalidHandler.cs.template"
+             Condition="'$(IncludeInvalidHandler)' == 'true'" />
+  </ItemGroup>
+</Project>

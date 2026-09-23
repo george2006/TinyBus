@@ -3,6 +3,8 @@
     <File Path="AGENTS.md" />
     <File Path="WORKING-AGREEMENT.md" />
     <File Path="PLAN.md" />
+    <File Path="README.md" />
+    <File Path="docs/runtime-plan.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/TinyBus/TinyBus.csproj" />

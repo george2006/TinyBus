@@ -1,0 +1,13 @@
+using TinyBus;
+
+namespace Payments;
+
+public sealed class DuplicateCapturePaymentHandler : ICommandHandler<CapturePayment>
+{
+    public ValueTask HandleAsync(
+        CapturePayment command,
+        CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}

@@ -5,5 +5,16 @@
     <Version>0.1.0-dev</Version>
     <PackageId>TinySuite.TinyBus</PackageId>
     <Description>Compile-time-oriented messaging contracts for TinyBus.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TinyBus.SourceGen/TinyBus.SourceGen.csproj"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
+    <None Include="../TinyBus.SourceGen/bin/$(Configuration)/netstandard2.0/TinyBus.SourceGen.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 </Project>

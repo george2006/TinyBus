@@ -7,23 +7,32 @@ namespace TinyBus.SourceGen.Tests;
 
 internal static class SourceGeneratorTestHost
 {
+    private const string DefaultAssemblyName = "TinyBusConsumer";
     private static readonly ImmutableArray<MetadataReference> References = CreateReferences();
 
     public static GeneratorDriverRunResult Run(params string[] sources)
     {
-        return Run(assertCompilationSucceeds: true, sources);
+        return Run(DefaultAssemblyName, assertCompilationSucceeds: true, sources);
+    }
+
+    public static GeneratorDriverRunResult RunForAssembly(
+        string assemblyName,
+        params string[] sources)
+    {
+        return Run(assemblyName, assertCompilationSucceeds: true, sources);
     }
 
     public static GeneratorDriverRunResult RunWithDiagnostics(params string[] sources)
     {
-        return Run(assertCompilationSucceeds: false, sources);
+        return Run(DefaultAssemblyName, assertCompilationSucceeds: false, sources);
     }
 
     private static GeneratorDriverRunResult Run(
+        string assemblyName,
         bool assertCompilationSucceeds,
         params string[] sources)
     {
-        var compilation = CreateCompilation(sources);
+        var compilation = CreateCompilation(assemblyName, sources);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new TinyBusSourceGenerator().AsSourceGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
@@ -40,7 +49,7 @@ internal static class SourceGeneratorTestHost
 
     public static T Execute<T>(params string[] sources)
     {
-        var compilation = CreateCompilation(sources);
+        var compilation = CreateCompilation(DefaultAssemblyName, sources);
         var driver = CSharpGeneratorDriver.Create(new TinyBusSourceGenerator().AsSourceGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
         AssertCompiles(output);
@@ -64,7 +73,9 @@ internal static class SourceGeneratorTestHost
         }
     }
 
-    private static CSharpCompilation CreateCompilation(params string[] sources)
+    private static CSharpCompilation CreateCompilation(
+        string assemblyName,
+        params string[] sources)
     {
         var trees = sources.Select((source, index) => CSharpSyntaxTree.ParseText(
             source,
@@ -74,7 +85,7 @@ internal static class SourceGeneratorTestHost
             nullableContextOptions: NullableContextOptions.Enable);
 
         return CSharpCompilation.Create(
-            $"TinyBusConsumer_{Guid.NewGuid():N}",
+            assemblyName,
             trees,
             References,
             options);

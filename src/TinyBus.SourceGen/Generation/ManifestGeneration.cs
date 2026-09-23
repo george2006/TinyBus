@@ -9,10 +9,11 @@ namespace TinyBus.SourceGen.Generation;
 internal sealed class ManifestGeneration
 {
     public (string HintName, string Source) Generate(
+        string assemblyName,
         ImmutableArray<MessageHandlerDefinition> definitions,
         CancellationToken cancellationToken)
     {
-        var plan = new ManifestPlanner().Create(definitions, cancellationToken);
+        var plan = new ManifestPlanner().Create(assemblyName, definitions, cancellationToken);
         var source = new ManifestEmitter().Emit(plan, cancellationToken);
 
         return ("TinyBus.Generated.Manifest.g.cs", source);

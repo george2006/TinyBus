@@ -5,10 +5,15 @@ namespace TinyBus.SourceGen.Generation.Planning;
 
 internal sealed class ManifestPlan
 {
-    public ManifestPlan(ImmutableArray<MessageHandlerDefinition> messages)
+    public ManifestPlan(
+        string manifestTypeName,
+        ImmutableArray<MessageHandlerDefinition> messages)
     {
+        ManifestTypeName = manifestTypeName;
         Messages = messages;
     }
+
+    public string ManifestTypeName { get; }
 
     public ImmutableArray<MessageHandlerDefinition> Messages { get; }
 }

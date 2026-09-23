@@ -19,7 +19,8 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
         var validation = Validate(analysis);
         var definitions = ExtractValidDefinitions(validation);
         var manifestIssues = ValidateManifest(validation);
-        var manifest = GenerateManifest(definitions);
+        var assemblyName = ReadAssemblyName(context.CompilationProvider);
+        var manifest = GenerateManifest(assemblyName, definitions);
 
         RegisterManifest(context, manifest);
         ReportDiagnostics(context, validation, manifestIssues);
@@ -60,11 +61,18 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
     }
 
     private static IncrementalValueProvider<(string HintName, string Source)> GenerateManifest(
+        IncrementalValueProvider<string> assemblyName,
         IncrementalValuesProvider<MessageHandlerDefinition> definitions)
     {
-        return definitions.Collect()
-            .Select(static (definitions, cancellationToken) =>
-                new ManifestGeneration().Generate(definitions, cancellationToken));
+        return assemblyName.Combine(definitions.Collect())
+            .Select(static (input, cancellationToken) =>
+                new ManifestGeneration().Generate(input.Left, input.Right, cancellationToken));
+    }
+
+    private static IncrementalValueProvider<string> ReadAssemblyName(
+        IncrementalValueProvider<Compilation> compilation)
+    {
+        return compilation.Select(static (value, _) => value.AssemblyName ?? "Assembly");
     }
 
     private static void RegisterManifest(
