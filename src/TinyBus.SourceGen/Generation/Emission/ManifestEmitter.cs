@@ -38,7 +38,7 @@ internal sealed class ManifestEmitter
         source.AppendLine("                new global::TinyBus.MessageDescriptor(");
         source.Append("                    new global::TinyBus.ContractIdentity(");
         WriteString(source, message.ContractName);
-        source.AppendLine(", 1),");
+        source.Append(", ").Append(message.ContractVersion).AppendLine("),");
         source.Append("                    typeof(").Append(message.MessageTypeName).AppendLine("),");
         source.Append("                    typeof(").Append(message.HandlerTypeName).AppendLine("),");
         source.Append("                    global::TinyBus.MessageKind.").Append(message.Kind);
@@ -65,6 +65,30 @@ internal sealed class ManifestEmitter
                     break;
                 case '"':
                     source.Append("\\\"");
+                    break;
+                case '\0':
+                    source.Append("\\0");
+                    break;
+                case '\a':
+                    source.Append("\\a");
+                    break;
+                case '\b':
+                    source.Append("\\b");
+                    break;
+                case '\f':
+                    source.Append("\\f");
+                    break;
+                case '\n':
+                    source.Append("\\n");
+                    break;
+                case '\r':
+                    source.Append("\\r");
+                    break;
+                case '\t':
+                    source.Append("\\t");
+                    break;
+                case '\v':
+                    source.Append("\\v");
                     break;
                 default:
                     source.Append(character);

@@ -12,6 +12,8 @@ internal sealed class HandlerAnalyzer
     private const string CommandHandlerMetadataName = "TinyBus.ICommandHandler`1";
     private const string EventHandlerMetadataName = "TinyBus.IEventHandler`1";
     private const string RequestHandlerMetadataName = "TinyBus.IRequestHandler`2";
+    private const string BusContractAttributeMetadataName = "TinyBus.BusContractAttribute";
+    private const string ContractVersionPropertyName = "Version";
 
     public ImmutableArray<MessageHandlerDefinition> Analyze(
         GeneratorSyntaxContext context,
@@ -46,6 +48,7 @@ internal sealed class HandlerAnalyzer
         var commandHandler = compilation.GetTypeByMetadataName(CommandHandlerMetadataName);
         var eventHandler = compilation.GetTypeByMetadataName(EventHandlerMetadataName);
         var requestHandler = compilation.GetTypeByMetadataName(RequestHandlerMetadataName);
+        var busContractAttribute = compilation.GetTypeByMetadataName(BusContractAttributeMetadataName);
         var definitions = ImmutableArray.CreateBuilder<MessageHandlerDefinition>();
 
         foreach (var implementedInterface in handler.AllInterfaces)
@@ -54,19 +57,31 @@ internal sealed class HandlerAnalyzer
 
             if (IsHandlerContract(implementedInterface, commandHandler))
             {
-                definitions.Add(CreateDefinition(handler, implementedInterface, MessageHandlerKind.Command));
+                definitions.Add(CreateDefinition(
+                    handler,
+                    implementedInterface,
+                    MessageHandlerKind.Command,
+                    busContractAttribute));
                 continue;
             }
 
             if (IsHandlerContract(implementedInterface, eventHandler))
             {
-                definitions.Add(CreateDefinition(handler, implementedInterface, MessageHandlerKind.Event));
+                definitions.Add(CreateDefinition(
+                    handler,
+                    implementedInterface,
+                    MessageHandlerKind.Event,
+                    busContractAttribute));
                 continue;
             }
 
             if (IsHandlerContract(implementedInterface, requestHandler))
             {
-                definitions.Add(CreateDefinition(handler, implementedInterface, MessageHandlerKind.Request));
+                definitions.Add(CreateDefinition(
+                    handler,
+                    implementedInterface,
+                    MessageHandlerKind.Request,
+                    busContractAttribute));
             }
         }
 
@@ -90,19 +105,79 @@ internal sealed class HandlerAnalyzer
     private static MessageHandlerDefinition CreateDefinition(
         INamedTypeSymbol handler,
         INamedTypeSymbol implementedInterface,
-        MessageHandlerKind kind)
+        MessageHandlerKind kind,
+        INamedTypeSymbol? busContractAttribute)
     {
         var message = implementedInterface.TypeArguments[0];
         var response = kind == MessageHandlerKind.Request
             ? implementedInterface.TypeArguments[1]
             : null;
+        var contractAttribute = FindContractAttribute(message, busContractAttribute);
+        var contractName = ReadContractName(message, contractAttribute);
+        var contractVersion = ReadContractVersion(contractAttribute);
 
         return new MessageHandlerDefinition(
-            message.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
+            contractName,
+            contractVersion,
             message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             kind,
             response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+    }
+
+    private static AttributeData? FindContractAttribute(
+        ITypeSymbol message,
+        INamedTypeSymbol? busContractAttribute)
+    {
+        if (busContractAttribute is null)
+        {
+            return null;
+        }
+
+        return message.GetAttributes().FirstOrDefault(attribute =>
+            SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, busContractAttribute));
+    }
+
+    private static string ReadContractName(ITypeSymbol message, AttributeData? contractAttribute)
+    {
+        var explicitName = ReadExplicitContractName(contractAttribute);
+        if (explicitName is not null)
+        {
+            return explicitName;
+        }
+
+        // Convention-based identities follow CLR names. Use BusContractAttribute when an identity
+        // must survive namespace or type-name refactoring.
+        return message.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+    }
+
+    private static string? ReadExplicitContractName(AttributeData? contractAttribute)
+    {
+        if (contractAttribute is null || contractAttribute.ConstructorArguments.IsEmpty)
+        {
+            return null;
+        }
+
+        return contractAttribute.ConstructorArguments[0].Value as string;
+    }
+
+    private static int ReadContractVersion(AttributeData? contractAttribute)
+    {
+        if (contractAttribute is null)
+        {
+            return 1;
+        }
+
+        foreach (var argument in contractAttribute.NamedArguments)
+        {
+            if (argument.Key == ContractVersionPropertyName
+                && argument.Value.Value is int version)
+            {
+                return version;
+            }
+        }
+
+        return 1;
     }
 
     private static bool IsConcreteHandler(INamedTypeSymbol handler)

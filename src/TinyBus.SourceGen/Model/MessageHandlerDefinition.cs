@@ -6,12 +6,14 @@ internal sealed class MessageHandlerDefinition : IEquatable<MessageHandlerDefini
 {
     public MessageHandlerDefinition(
         string contractName,
+        int contractVersion,
         string messageTypeName,
         string handlerTypeName,
         MessageHandlerKind kind,
         string? responseTypeName)
     {
         ContractName = contractName;
+        ContractVersion = contractVersion;
         MessageTypeName = messageTypeName;
         HandlerTypeName = handlerTypeName;
         Kind = kind;
@@ -19,6 +21,8 @@ internal sealed class MessageHandlerDefinition : IEquatable<MessageHandlerDefini
     }
 
     public string ContractName { get; }
+
+    public int ContractVersion { get; }
 
     public string MessageTypeName { get; }
 
@@ -32,6 +36,7 @@ internal sealed class MessageHandlerDefinition : IEquatable<MessageHandlerDefini
     {
         return other is not null
             && ContractName == other.ContractName
+            && ContractVersion == other.ContractVersion
             && MessageTypeName == other.MessageTypeName
             && HandlerTypeName == other.HandlerTypeName
             && Kind == other.Kind
@@ -45,6 +50,7 @@ internal sealed class MessageHandlerDefinition : IEquatable<MessageHandlerDefini
 
     public override int GetHashCode()
     {
-        return (ContractName, MessageTypeName, HandlerTypeName, Kind, ResponseTypeName).GetHashCode();
+        var identityHash = (ContractName, ContractVersion).GetHashCode();
+        return (identityHash, MessageTypeName, HandlerTypeName, Kind, ResponseTypeName).GetHashCode();
     }
 }

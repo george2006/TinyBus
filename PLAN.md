@@ -47,7 +47,7 @@ now uses one guard clause per rejection reason and names the meaningful decision
 
 Approved and committed as `6536907`.
 
-### Slice 3: event and request handler semantics — implemented, awaiting review
+### Slice 3: event and request handler semantics — implemented, verified and approved
 
 Extend the existing pipeline to `IEventHandler<T>` and `IRequestHandler<TRequest, TResponse>`.
 Analysis must return every supported handler contract implemented by a concrete class, rather than
@@ -57,6 +57,19 @@ type. No contract attributes or diagnostics are part of this slice.
 Three executable generator tests cover event metadata, request response metadata and a single
 class implementing both a command and event handler. The full solution passes eleven tests with no
 warnings. Roslyn remains confined to the generator entry point, `Discovery` and `Analysis`.
+
+Approved and committed as `f42c2c3`.
+
+### Slice 4: contract identity generation — implemented, awaiting review
+
+Read valid `[BusContract]` declarations during analysis and carry their name and version as plain
+model values into generation. Messages without the attribute keep the readable fully-qualified CLR
+type name and version one. Manifest ordering includes contract version. Invalid explicit identities
+remain the following diagnostics slice.
+
+Four executable generator tests cover the default identity, explicit name, explicit version and
+safe C# emission of quoted/control characters in a valid name. The complete solution passes fifteen
+tests with no warnings.
 
 ### Later slices — intent only
 
