@@ -60,7 +60,7 @@ warnings. Roslyn remains confined to the generator entry point, `Discovery` and 
 
 Approved and committed as `f42c2c3`.
 
-### Slice 4: contract identity generation — implemented, awaiting review
+### Slice 4: contract identity generation — implemented, verified and approved
 
 Read valid `[BusContract]` declarations during analysis and carry their name and version as plain
 model values into generation. Messages without the attribute keep the readable fully-qualified CLR
@@ -70,6 +70,19 @@ remain the following diagnostics slice.
 Four executable generator tests cover the default identity, explicit name, explicit version and
 safe C# emission of quoted/control characters in a valid name. The complete solution passes fifteen
 tests with no warnings.
+
+Approved and committed as `a81b6ab`.
+
+### Slice 5: generated manifest guarantees — implemented, awaiting review
+
+Lock down the generated manifest behavior before diagnostics: output remains identical when source
+file order changes, multiple local handlers for one event are retained, and an assembly with no
+handlers receives an empty manifest without runtime registration or assembly scanning. No public
+API or generator architecture changes are expected.
+
+All three guarantees passed without production changes, confirming that planning already owns the
+ordering and generation needs no runtime discovery path. The full solution passes eighteen tests
+with no warnings.
 
 ### Later slices — intent only
 
