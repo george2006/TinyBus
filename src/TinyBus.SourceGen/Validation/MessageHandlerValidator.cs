@@ -10,7 +10,7 @@ internal sealed class MessageHandlerValidator
         var issues = ReadIssues(candidate);
         var definition = issues.IsEmpty ? CreateDefinition(candidate) : null;
 
-        return new MessageValidationResult(definition, issues);
+        return new MessageValidationResult(candidate, definition, issues);
     }
 
     private static ImmutableArray<MessageIssue> ReadIssues(MessageHandlerAnalysis candidate)

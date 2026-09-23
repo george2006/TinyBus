@@ -128,6 +128,7 @@ internal sealed class HandlerAnalyzer
             handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             kind,
             response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            SourceLocationReader.Read(compilation, handler.Locations[0]),
             ReadContractNameLocation(compilation, message, contractAttribute),
             ReadContractVersionLocation(compilation, message, contractAttribute));
     }

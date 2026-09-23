@@ -18,10 +18,11 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
         var analysis = Analyze(context.SyntaxProvider);
         var validation = Validate(analysis);
         var definitions = ExtractValidDefinitions(validation);
+        var manifestIssues = ValidateManifest(validation);
         var manifest = GenerateManifest(definitions);
 
         RegisterManifest(context, manifest);
-        ReportDiagnostics(context, validation);
+        ReportDiagnostics(context, validation, manifestIssues);
     }
 
     private static IncrementalValuesProvider<MessageHandlerAnalysis> Analyze(
@@ -49,6 +50,15 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
             .Select(static (result, _) => result.Definition!);
     }
 
+    private static IncrementalValuesProvider<MessageIssue> ValidateManifest(
+        IncrementalValuesProvider<MessageValidationResult> validation)
+    {
+        return validation.Collect()
+            .Select(static (results, cancellationToken) =>
+                new ManifestValidator().Validate(results, cancellationToken))
+            .SelectMany(static (issues, _) => issues);
+    }
+
     private static IncrementalValueProvider<(string HintName, string Source)> GenerateManifest(
         IncrementalValuesProvider<MessageHandlerDefinition> definitions)
     {
@@ -67,9 +77,19 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
 
     private static void ReportDiagnostics(
         IncrementalGeneratorInitializationContext context,
-        IncrementalValuesProvider<MessageValidationResult> validation)
+        IncrementalValuesProvider<MessageValidationResult> validation,
+        IncrementalValuesProvider<MessageIssue> manifestIssues)
     {
-        var issues = validation.SelectMany(static (result, _) => result.Issues);
+        var contractIssues = validation.SelectMany(static (result, _) => result.Issues);
+
+        RegisterDiagnostics(context, contractIssues);
+        RegisterDiagnostics(context, manifestIssues);
+    }
+
+    private static void RegisterDiagnostics(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<MessageIssue> issues)
+    {
         context.RegisterSourceOutput(issues.Combine(context.CompilationProvider), static (output, input) =>
             output.ReportDiagnostic(MessageDiagnosticReporter.Create(input.Right, input.Left)));
     }

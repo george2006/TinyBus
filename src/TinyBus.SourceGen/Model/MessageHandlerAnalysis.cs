@@ -12,6 +12,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
         string handlerTypeName,
         MessageHandlerKind kind,
         string? responseTypeName,
+        SourceLocation handlerLocation,
         SourceLocation contractNameLocation,
         SourceLocation contractVersionLocation)
     {
@@ -22,6 +23,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
         HandlerTypeName = handlerTypeName;
         Kind = kind;
         ResponseTypeName = responseTypeName;
+        HandlerLocation = handlerLocation;
         ContractNameLocation = contractNameLocation;
         ContractVersionLocation = contractVersionLocation;
     }
@@ -40,6 +42,8 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
 
     public string? ResponseTypeName { get; }
 
+    public SourceLocation HandlerLocation { get; }
+
     public SourceLocation ContractNameLocation { get; }
 
     public SourceLocation ContractVersionLocation { get; }
@@ -54,6 +58,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
             && HandlerTypeName == other.HandlerTypeName
             && Kind == other.Kind
             && ResponseTypeName == other.ResponseTypeName
+            && HandlerLocation.Equals(other.HandlerLocation)
             && ContractNameLocation.Equals(other.ContractNameLocation)
             && ContractVersionLocation.Equals(other.ContractVersionLocation);
     }
@@ -67,6 +72,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
     {
         var contractHash = (MessageDisplayName, ContractName, ContractVersion).GetHashCode();
         var typeHash = (MessageTypeName, HandlerTypeName, Kind, ResponseTypeName).GetHashCode();
-        return (contractHash, typeHash, ContractNameLocation, ContractVersionLocation).GetHashCode();
+        var locationHash = (HandlerLocation, ContractNameLocation, ContractVersionLocation).GetHashCode();
+        return (contractHash, typeHash, locationHash).GetHashCode();
     }
 }

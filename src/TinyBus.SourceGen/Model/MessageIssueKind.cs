@@ -3,5 +3,8 @@ namespace TinyBus.SourceGen.Model;
 internal enum MessageIssueKind
 {
     InvalidContractName,
-    InvalidContractVersion
+    InvalidContractVersion,
+    DuplicateCommandHandler,
+    DuplicateRequestHandler,
+    ConflictingMessageSemantics
 }

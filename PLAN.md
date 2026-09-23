@@ -102,6 +102,20 @@ generator. Incremental provider mechanics live in small named methods, leaving t
 Analyze, Validate, ExtractValidDefinitions, GenerateManifest, RegisterManifest and
 ReportDiagnostics.
 
+Approved and committed as `ae1be71`.
+
+### Slice 7: handler topology diagnostics — implemented, awaiting review
+
+Validate the complete set of locally valid handlers after individual contract validation. Report
+duplicate command handlers, duplicate request handlers and one CLR message type used with
+conflicting semantics. Multiple handlers for an event remain valid. Generation keeps all valid
+descriptors; a topology error fails compilation rather than selecting a handler.
+
+Three focused tests cover duplicate command handlers, duplicate request handlers and conflicting
+semantics within one handler class. Diagnostics point at every distinct handler involved and are
+ordered deterministically. The existing executable multiple-event-handler test remains green. The
+complete solution passes twenty-six tests with no warnings.
+
 ### Later slices — intent only
 
 Events and requests, explicit contract naming, diagnostics and samples will each be sliced before
