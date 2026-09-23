@@ -11,6 +11,18 @@ internal static class SourceGeneratorTestHost
 
     public static GeneratorDriverRunResult Run(params string[] sources)
     {
+        return Run(assertCompilationSucceeds: true, sources);
+    }
+
+    public static GeneratorDriverRunResult RunWithDiagnostics(params string[] sources)
+    {
+        return Run(assertCompilationSucceeds: false, sources);
+    }
+
+    private static GeneratorDriverRunResult Run(
+        bool assertCompilationSucceeds,
+        params string[] sources)
+    {
         var compilation = CreateCompilation(sources);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new TinyBusSourceGenerator().AsSourceGenerator());
@@ -18,7 +30,10 @@ internal static class SourceGeneratorTestHost
 
         var result = Assert.Single(driver.GetRunResult().Results);
         Assert.Null(result.Exception);
-        AssertCompiles(output);
+        if (assertCompilationSucceeds)
+        {
+            AssertCompiles(output);
+        }
 
         return driver.GetRunResult();
     }

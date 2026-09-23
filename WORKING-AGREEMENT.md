@@ -7,6 +7,10 @@ object-oriented code. Good practices serve the product; they are not an exercise
 
 - Objects represent concrete responsibilities and keep related behavior together.
 - Read top down: entry point and main behavior first, implementation details below.
+- Let orchestration code breathe. An entry point should read like an index of the behavior, with
+  one clearly named step per line and whitespace between phases. Move pipeline mechanics and
+  implementation detail into small methods below it so a reader can understand the complete flow
+  before choosing which step to inspect.
 - Keep methods small and focused on one responsibility, without fragmenting a readable flow.
 - Use intention-revealing names, braces, early returns, and whitespace between logical steps.
 - Give domain decisions explicit names. A reader should understand why a branch is taken without

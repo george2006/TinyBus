@@ -15,7 +15,7 @@ internal sealed class HandlerAnalyzer
     private const string BusContractAttributeMetadataName = "TinyBus.BusContractAttribute";
     private const string ContractVersionPropertyName = "Version";
 
-    public ImmutableArray<MessageHandlerDefinition> Analyze(
+    public ImmutableArray<MessageHandlerAnalysis> Analyze(
         GeneratorSyntaxContext context,
         CancellationToken cancellationToken)
     {
@@ -24,23 +24,23 @@ internal sealed class HandlerAnalyzer
 
         if (declaredSymbol is not INamedTypeSymbol handler)
         {
-            return ImmutableArray<MessageHandlerDefinition>.Empty;
+            return ImmutableArray<MessageHandlerAnalysis>.Empty;
         }
 
         if (!IsConcreteHandler(handler))
         {
-            return ImmutableArray<MessageHandlerDefinition>.Empty;
+            return ImmutableArray<MessageHandlerAnalysis>.Empty;
         }
 
         if (!IsPrimaryDeclaration(handler, declaration, cancellationToken))
         {
-            return ImmutableArray<MessageHandlerDefinition>.Empty;
+            return ImmutableArray<MessageHandlerAnalysis>.Empty;
         }
 
         return AnalyzeContracts(context.SemanticModel.Compilation, handler, cancellationToken);
     }
 
-    private static ImmutableArray<MessageHandlerDefinition> AnalyzeContracts(
+    private static ImmutableArray<MessageHandlerAnalysis> AnalyzeContracts(
         Compilation compilation,
         INamedTypeSymbol handler,
         CancellationToken cancellationToken)
@@ -49,7 +49,7 @@ internal sealed class HandlerAnalyzer
         var eventHandler = compilation.GetTypeByMetadataName(EventHandlerMetadataName);
         var requestHandler = compilation.GetTypeByMetadataName(RequestHandlerMetadataName);
         var busContractAttribute = compilation.GetTypeByMetadataName(BusContractAttributeMetadataName);
-        var definitions = ImmutableArray.CreateBuilder<MessageHandlerDefinition>();
+        var candidates = ImmutableArray.CreateBuilder<MessageHandlerAnalysis>();
 
         foreach (var implementedInterface in handler.AllInterfaces)
         {
@@ -57,7 +57,8 @@ internal sealed class HandlerAnalyzer
 
             if (IsHandlerContract(implementedInterface, commandHandler))
             {
-                definitions.Add(CreateDefinition(
+                candidates.Add(CreateAnalysis(
+                    compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Command,
@@ -67,7 +68,8 @@ internal sealed class HandlerAnalyzer
 
             if (IsHandlerContract(implementedInterface, eventHandler))
             {
-                definitions.Add(CreateDefinition(
+                candidates.Add(CreateAnalysis(
+                    compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Event,
@@ -77,7 +79,8 @@ internal sealed class HandlerAnalyzer
 
             if (IsHandlerContract(implementedInterface, requestHandler))
             {
-                definitions.Add(CreateDefinition(
+                candidates.Add(CreateAnalysis(
+                    compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Request,
@@ -85,7 +88,7 @@ internal sealed class HandlerAnalyzer
             }
         }
 
-        return definitions.ToImmutable();
+        return candidates.ToImmutable();
     }
 
     private static bool IsHandlerContract(
@@ -102,7 +105,8 @@ internal sealed class HandlerAnalyzer
             handlerContract);
     }
 
-    private static MessageHandlerDefinition CreateDefinition(
+    private static MessageHandlerAnalysis CreateAnalysis(
+        Compilation compilation,
         INamedTypeSymbol handler,
         INamedTypeSymbol implementedInterface,
         MessageHandlerKind kind,
@@ -116,13 +120,16 @@ internal sealed class HandlerAnalyzer
         var contractName = ReadContractName(message, contractAttribute);
         var contractVersion = ReadContractVersion(contractAttribute);
 
-        return new MessageHandlerDefinition(
+        return new MessageHandlerAnalysis(
+            message.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
             contractName,
             contractVersion,
             message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             kind,
-            response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+            response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            ReadContractNameLocation(compilation, message, contractAttribute),
+            ReadContractVersionLocation(compilation, message, contractAttribute));
     }
 
     private static AttributeData? FindContractAttribute(
@@ -138,12 +145,11 @@ internal sealed class HandlerAnalyzer
             SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, busContractAttribute));
     }
 
-    private static string ReadContractName(ITypeSymbol message, AttributeData? contractAttribute)
+    private static string? ReadContractName(ITypeSymbol message, AttributeData? contractAttribute)
     {
-        var explicitName = ReadExplicitContractName(contractAttribute);
-        if (explicitName is not null)
+        if (contractAttribute is not null)
         {
-            return explicitName;
+            return ReadExplicitContractName(contractAttribute);
         }
 
         // Convention-based identities follow CLR names. Use BusContractAttribute when an identity
@@ -153,12 +159,48 @@ internal sealed class HandlerAnalyzer
 
     private static string? ReadExplicitContractName(AttributeData? contractAttribute)
     {
-        if (contractAttribute is null || contractAttribute.ConstructorArguments.IsEmpty)
+        if (contractAttribute is null)
+        {
+            return null;
+        }
+
+        if (contractAttribute.ConstructorArguments.IsEmpty)
         {
             return null;
         }
 
         return contractAttribute.ConstructorArguments[0].Value as string;
+    }
+
+    private static SourceLocation ReadContractNameLocation(
+        Compilation compilation,
+        ITypeSymbol message,
+        AttributeData? contractAttribute)
+    {
+        var syntax = ReadAttributeSyntax(contractAttribute);
+        var argument = syntax?.ArgumentList?.Arguments.FirstOrDefault(candidate =>
+            candidate.NameEquals is null);
+        var location = argument?.Expression.GetLocation() ?? message.Locations[0];
+
+        return SourceLocationReader.Read(compilation, location);
+    }
+
+    private static SourceLocation ReadContractVersionLocation(
+        Compilation compilation,
+        ITypeSymbol message,
+        AttributeData? contractAttribute)
+    {
+        var syntax = ReadAttributeSyntax(contractAttribute);
+        var argument = syntax?.ArgumentList?.Arguments.FirstOrDefault(candidate =>
+            candidate.NameEquals?.Name.Identifier.ValueText == ContractVersionPropertyName);
+        var location = argument?.Expression.GetLocation() ?? message.Locations[0];
+
+        return SourceLocationReader.Read(compilation, location);
+    }
+
+    private static AttributeSyntax? ReadAttributeSyntax(AttributeData? contractAttribute)
+    {
+        return contractAttribute?.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax;
     }
 
     private static int ReadContractVersion(AttributeData? contractAttribute)

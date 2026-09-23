@@ -84,6 +84,24 @@ All three guarantees passed without production changes, confirming that planning
 ordering and generation needs no runtime discovery path. The full solution passes eighteen tests
 with no warnings.
 
+Approved and committed as `5ceaf16`.
+
+### Slice 6: contract identity diagnostics — implemented, awaiting review
+
+Introduced the concrete validation boundary needed by the first two diagnostics. Analysis produces
+Roslyn-free candidate data and scalar source locations; validation converts valid candidates into
+definitions and rejects blank explicit names or versions below one; diagnostics rebind issues only
+at the compiler output boundary. Invalid handlers do not enter generation.
+
+Five focused diagnostic cases cover null, empty and whitespace names plus zero and negative
+versions. Each diagnostic points at the invalid attribute expression, and the rejected handler is
+absent from generated metadata. The complete solution passes twenty-three tests with no warnings.
+
+Review refinement: `TinyBusSourceGenerator.Initialize` now reads as the phase index of the
+generator. Incremental provider mechanics live in small named methods, leaving the entry point as
+Analyze, Validate, ExtractValidDefinitions, GenerateManifest, RegisterManifest and
+ReportDiagnostics.
+
 ### Later slices — intent only
 
 Events and requests, explicit contract naming, diagnostics and samples will each be sliced before
