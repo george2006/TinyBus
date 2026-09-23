@@ -116,6 +116,20 @@ semantics within one handler class. Diagnostics point at every distinct handler 
 ordered deterministically. The existing executable multiple-event-handler test remains green. The
 complete solution passes twenty-six tests with no warnings.
 
+Approved and committed as `fa24921`.
+
+### Slice 8: compile-time developer experience samples — implemented, awaiting review
+
+Add the three planned sample assemblies. Contracts contains ordinary records and one stable
+`[BusContract]` identity. Payments consumes command, event and request messages; Orders independently
+consumes the same event. The samples only prove declaration and generation ergonomics—there is no
+runtime transport or simulated communication.
+
+The complete solution builds all three samples with no warnings. Inspected generated sources show
+one event descriptor in Orders and command, request-with-response and event descriptors in Payments;
+both independently consume the stable `orders.order-placed` contract. No generated topology leaks
+between assemblies.
+
 ### Later slices — intent only
 
 Events and requests, explicit contract naming, diagnostics and samples will each be sliced before

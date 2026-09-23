@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TinyBus.Sample.Contracts/TinyBus.Sample.Contracts.csproj" />
+    <ProjectReference Include="../../src/TinyBus/TinyBus.csproj" />
+    <ProjectReference Include="../../src/TinyBus.SourceGen/TinyBus.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

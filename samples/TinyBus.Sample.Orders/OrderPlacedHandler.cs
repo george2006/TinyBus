@@ -1,0 +1,15 @@
+using System.Threading;
+using System.Threading.Tasks;
+using TinyBus.Sample.Contracts;
+
+namespace TinyBus.Sample.Orders;
+
+public sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
+{
+    public ValueTask HandleAsync(
+        OrderPlaced @event,
+        CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}
