@@ -29,7 +29,6 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
                 HandlerDiscovery.IsCandidateDeclaration,
                 static (candidate, cancellationToken) =>
                     new HandlerAnalyzer().Analyze(candidate, cancellationToken))
-            .Where(static definition => definition is not null)
-            .Select(static (definition, _) => definition!);
+            .SelectMany(static (definitions, _) => definitions);
     }
 }

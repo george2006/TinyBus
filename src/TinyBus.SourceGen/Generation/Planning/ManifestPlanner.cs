@@ -16,6 +16,7 @@ internal sealed class ManifestPlanner
 
         var messages = definitions
             .OrderBy(definition => definition.ContractName, StringComparer.Ordinal)
+            .ThenBy(definition => definition.Kind)
             .ThenBy(definition => definition.HandlerTypeName, StringComparer.Ordinal)
             .ToImmutableArray();
 

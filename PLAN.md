@@ -26,7 +26,7 @@ null, empty and whitespace input while preserving valid names and the default/ov
 Approved by the user's instruction to move on. Release build passed with no warnings and all six
 tests passed.
 
-### Slice 2: first source-generated command manifest — implemented, awaiting review
+### Slice 2: first source-generated command manifest — implemented, verified and approved
 
 Add the source-generator and generator-test projects. Prove one complete vertical path: discover a
 concrete `ICommandHandler<T>`, analyze it into Roslyn-free data, plan deterministic output and emit
@@ -44,6 +44,19 @@ Review refinement: strengthened the working agreement so compound implementation
 behind intention-revealing decisions when they would interrupt top-down reading. `HandlerAnalyzer`
 now uses one guard clause per rejection reason and names the meaningful decisions
 `IsConcreteHandler` and `IsPrimaryDeclaration`.
+
+Approved and committed as `6536907`.
+
+### Slice 3: event and request handler semantics — implemented, awaiting review
+
+Extend the existing pipeline to `IEventHandler<T>` and `IRequestHandler<TRequest, TResponse>`.
+Analysis must return every supported handler contract implemented by a concrete class, rather than
+assuming one class produces one descriptor. Generated request descriptors include their response
+type. No contract attributes or diagnostics are part of this slice.
+
+Three executable generator tests cover event metadata, request response metadata and a single
+class implementing both a command and event handler. The full solution passes eleven tests with no
+warnings. Roslyn remains confined to the generator entry point, `Discovery` and `Analysis`.
 
 ### Later slices — intent only
 

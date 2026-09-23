@@ -41,7 +41,16 @@ internal sealed class ManifestEmitter
         source.AppendLine(", 1),");
         source.Append("                    typeof(").Append(message.MessageTypeName).AppendLine("),");
         source.Append("                    typeof(").Append(message.HandlerTypeName).AppendLine("),");
-        source.AppendLine("                    global::TinyBus.MessageKind.Command),");
+        source.Append("                    global::TinyBus.MessageKind.").Append(message.Kind);
+
+        if (message.ResponseTypeName is null)
+        {
+            source.AppendLine("),");
+            return;
+        }
+
+        source.AppendLine(",");
+        source.Append("                    typeof(").Append(message.ResponseTypeName).AppendLine(")),");
     }
 
     private static void WriteString(StringBuilder source, string value)
