@@ -548,6 +548,14 @@ is not a core operational requirement, and a sender must not need ownership read
 Do not introduce a common metadata-store abstraction, require PostgreSQL for RabbitMQ, or disguise missing
 ownership enforcement as successful broker declaration.
 
+RabbitMQ command addressing is now a provider-internal compatibility contract. Commands use the fixed
+`tinybus.commands` exchange and a human-readable routing key composed from the contract name and
+invariant version, such as `payments.capture.v1`. Tests lock the exact mapping and prove culture
+independence, version distinction and the 255-byte routing-key bound documented by
+[RabbitMQ](https://www.rabbitmq.com/tutorials/tutorial-five-dotnet). ContractIdentity remains in the
+envelope; the address neither stores nor validates the command owner. Exchange declaration, bindings,
+ownership enforcement and send acceptance remain unimplemented.
+
 #### Runtime refactor — implemented
 
 AddTinyBus previously created CommandRouteCache, used its registration to detect duplicate runtime

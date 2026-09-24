@@ -122,5 +122,6 @@ one transport before host readiness. PostgreSQL owns its internal command-route 
 cache; RabbitMQ does not implement or register them. Only test transport implementations exist so far.
 Production providers remain future work.
 Core, PostgreSQL and RabbitMQ have separate test projects so provider mechanics cannot leak into the
-Core test dependency graph. RabbitMQ tests begin when its first concrete behavior is implemented.
+Core test dependency graph. RabbitMQ now owns its first concrete behavior: deterministic internal
+command addressing. Broker communication and topology declaration remain future work.
 Transports, persistence, background refresh, receive workers and retries are not implemented yet.

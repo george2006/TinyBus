@@ -12,6 +12,8 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="TinyBus" />
+    <Using Include="TinyBus.RabbitMq" />
     <ProjectReference Include="../../src/TinyBus/TinyBus.csproj" />
     <ProjectReference Include="../../src/TinyBus.RabbitMq/TinyBus.RabbitMq.csproj" />
   </ItemGroup>

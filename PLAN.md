@@ -699,6 +699,18 @@ not enforce it, so separately design and prove the RabbitMQ conflict check witho
 reads a prerequisite for routing.
 The revised comparison is in docs/transport-plan.md. No provider code or real experiment has run.
 
+### RabbitMQ command addressing — implemented and verified
+
+TinyBus.RabbitMq now owns an internal CommandAddress that maps a ContractIdentity to physical RabbitMQ
+routing. Commands use the fixed `tinybus.commands` exchange and a human-readable routing key composed
+from the contract name and invariant version, such as `payments.capture.v1`. Addresses exceeding
+RabbitMQ's 255-byte routing-key limit are rejected with a clear error.
+
+The exact mapping is locked by a compatibility test. Additional tests prove name/version distinction,
+culture independence, boundary handling and invalid-identity rejection. Addressing remains routing
+mechanics and does not establish ownership. No RabbitMQ client, broker declaration, ownership metadata
+or Core API was added. All 145 tests pass.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete
