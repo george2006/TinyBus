@@ -2,9 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace TinyBus.Tests;
+namespace TinyBus.PostgreSql.Tests;
 
-public sealed class TopologyWorkerTests
+public sealed class PostgreSqlRuntimeTests
 {
     [Fact]
     public async Task Starts_only_after_reconciling_and_publishing_required_routes()
@@ -14,8 +14,8 @@ public sealed class TopologyWorkerTests
         var requiredContracts = new[] { command.Contract };
         var accumulator = new TopologyAccumulator();
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(accumulator, accumulator, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(accumulator, accumulator, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
 
         await host.StartAsync();
 
@@ -44,8 +44,8 @@ public sealed class TopologyWorkerTests
         var delayedProvider = delayReconciliation ? reconciler : source;
         delayedProvider.Availability = available.Task;
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(reconciler, source, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(reconciler, source, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
         var startupTimeout = TimeSpan.FromSeconds(10);
         using var timeout = new CancellationTokenSource(startupTimeout);
 
@@ -79,8 +79,8 @@ public sealed class TopologyWorkerTests
         var failedProvider = failReconciliation ? reconciler : source;
         failedProvider.Availability = Task.FromException(providerError);
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(reconciler, source, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(reconciler, source, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
 
@@ -104,8 +104,8 @@ public sealed class TopologyWorkerTests
         var delayedProvider = cancelReconciliation ? reconciler : source;
         delayedProvider.Availability = available.Task;
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(reconciler, source, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(reconciler, source, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
         using var cancellation = new CancellationTokenSource();
 
         var starting = host.StartAsync(cancellation.Token);
@@ -126,8 +126,8 @@ public sealed class TopologyWorkerTests
         var requiredContracts = new[] { capture.Contract, refund.Contract };
         var accumulator = new TopologyAccumulator();
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(accumulator, accumulator, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(accumulator, accumulator, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
 
@@ -148,8 +148,8 @@ public sealed class TopologyWorkerTests
         var accumulator = new TopologyAccumulator();
         await accumulator.ReconcileAsync(original);
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(accumulator, accumulator, conflicting, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(accumulator, accumulator, requiredContracts, cache);
+        using var host = CreateHost(transport, conflicting);
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
 
@@ -164,8 +164,8 @@ public sealed class TopologyWorkerTests
         var requiredContracts = Array.Empty<ContractIdentity>();
         var accumulator = new TopologyAccumulator();
         var cache = new CommandRouteCache();
-        var worker = new TopologyWorker(accumulator, accumulator, topology, requiredContracts, cache);
-        using var host = CreateHost(worker);
+        var transport = new RouteTestTransport(accumulator, accumulator, requiredContracts, cache);
+        using var host = CreateHost(transport, topology);
 
         await host.StartAsync();
 
@@ -175,12 +175,13 @@ public sealed class TopologyWorkerTests
         await host.StopAsync();
     }
 
-    private static IHost CreateHost(TopologyWorker worker)
+    private static IHost CreateHost(ITransport transport, ServiceTopology topology)
     {
         var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
         var builder = new HostApplicationBuilder(settings);
         builder.Logging.ClearProviders();
-        builder.Services.AddSingleton<IHostedService>(worker);
+        var runtime = new TinyBusRuntime(transport, topology);
+        builder.Services.AddSingleton<IHostedService>(runtime);
         return builder.Build();
     }
 

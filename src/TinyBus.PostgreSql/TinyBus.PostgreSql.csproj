@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TinyBus/TinyBus.csproj" />
+    <InternalsVisibleTo Include="TinyBus.PostgreSql.Tests" />
   </ItemGroup>
 </Project>

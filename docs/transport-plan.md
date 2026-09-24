@@ -4,13 +4,21 @@ Status: the first in-memory topology slice is implemented, verified and approved
 The second slice's public reconciliation/loading seams are implemented, verified and approved.
 The third slice's reusable ownership validation is implemented, verified and approved.
 The subsequent correction keeps CommandRoute passive and moves checks to their owning boundaries;
-that correction is approved. The user's TopologyWorker proposal replaces the rejected initializer;
-startup readiness and Hosting.Abstractions in TinyBus are approved. The worker slice is implemented,
-verified and approved.
+that correction is approved. The original TopologyWorker proved startup readiness through route
+loading; the provider comparison has now replaced it with one common TinyBusRuntime and the semantic
+ITransport initialization seam.
 Application registration is also implemented, verified and approved. Outbound usage discovery is
 explicitly deferred; registration must not require a manually maintained outbound-command list.
 Production transport send/receive contracts remain proposals. Native activation is complete
 at `ef1180d`.
+
+Latest routing decision: RabbitMQ uses deterministic contract-to-exchange/routing-key mapping and
+service queue bindings. Route lookup and caching are PostgreSQL capabilities, not unconditional
+runtime requirements. The old ITopologyReconciler and ICommandRouteSource seams are removed;
+CommandRoute and CommandRouteCache are internal to TinyBus.PostgreSql. Readable ownership metadata,
+if needed, is a private RabbitMQ
+mechanism; Management API is not part of the core operational contract. AddTinyBus no longer creates
+a route cache or requires a route source. Historical slice descriptions below describe the earlier code.
 
 ## Goal
 
@@ -40,15 +48,17 @@ ServiceIdentity + manifest(s) -> ServiceTopology
 each service contributes its topology
   -> transport-specific topology reconciliation
   -> PostgreSQL: shared topology tables and routing map
-  -> Azure Service Bus: queues, topics, subscriptions and routing metadata
+  -> RabbitMQ: exchanges, service queues and bindings
 ```
 
-Commands and requests resolve to their owning logical service; events reach interested services.
+Commands reach their owning logical service; events reach interested services. The provider decides
+whether routing uses local ownership lookup or broker bindings. Request/reply routing remains later work.
 Several instances of payments contribute the same logical service, not extra event subscriptions.
 Applications do not maintain a second manual command-routing map. No service exchanges full manifests
 with another, and no permanent coordinator or global manifest service exists. Each service reconciles
-only its own declarations; shared transport infrastructure accumulates the routing facts. Senders
-consume only the command routes they need. CLR message types stay local: shared DTO assemblies are
+only its own declarations; shared transport infrastructure accumulates the routing facts. Providers
+using a local cache load only needed command routes. RabbitMQ can route by contract without discovering
+the owning service in the sender. CLR message types stay local: shared DTO assemblies are
 optional, not a requirement. Wire compatibility is defined by contract identity and serialization.
 
 Topology contribution describes intended participation, not whether a process is currently alive.
@@ -58,12 +68,13 @@ from the same service are idempotent; two distinct command owners conflict. Remo
 ownership transfer require a later revision policy designed for rolling deployments.
 
 The reconciler consumes declarations, validates the combined topology and brings transport routing
-into agreement with it. For PostgreSQL it persists topology in shared tables. For Azure Service Bus
-it materializes queues, topics and subscriptions. A shared table store is not a mandatory common
+into agreement with it. For PostgreSQL it persists topology in shared tables. For RabbitMQ it declares
+exchanges, queues and bindings. A shared table store is not a mandatory common
 abstraction: each provider owns how the declarations and resulting routes are represented.
 Reconciliation runs as an operation in each contributing service, never as a permanent central daemon.
-Start with startup reconciliation and startup cache loading. A synchronous send consults its local
-immutable snapshot; network access and management calls never occur inside route lookup. Optional
+Start with startup reconciliation and the selected provider's readiness prerequisites. Providers
+using a cache load and validate it before readiness; RabbitMQ derives addressing from the contract
+and lets the broker apply its bindings. Routing must not add per-send administrative lookups. Optional
 periodic refresh comes later, with no generic notification interface or distributed-cache dependency.
 
 For ASB, explicitly define how a sender discovers which queue owns a command contract. Queue creation
@@ -82,9 +93,9 @@ Two remaining gaps must be addressed explicitly:
 ## Command journey and responsibilities
 
 1. Orders calls SendAsync with CapturePayment.
-2. TinyBus finds its contract identity and owner in the local command route cache, assigns message identity and
-   serializes the command into an envelope.
-3. The transport accepts the envelope for that destination and confirms acceptance to TinyBus.
+2. TinyBus obtains its contract identity, assigns message identity and serializes it into an envelope.
+3. The transport routes by contract and confirms durable acceptance to TinyBus. PostgreSQL may use
+   local ownership lookup; RabbitMQ maps the contract deterministically to an exchange/routing key.
 4. A Payments instance receives a delivery that it temporarily owns.
 5. TinyBus identifies the command contract, deserializes it, creates a delivery scope and invokes
    the existing typed CommandExecutor once.
@@ -95,7 +106,7 @@ Two remaining gaps must be addressed explicitly:
 | --- | --- | --- |
 | Contract identity and typed invocation | Generated TinyBus code | No runtime assembly scanning or invocation delegates |
 | Logical ownership/subscriptions | Shared transport infrastructure | Each service adds or confirms its own declarations |
-| Command lookup | Local immutable route cache | Synchronous ContractIdentity to ServiceIdentity lookup, no network |
+| Command routing | Transport provider | Local ownership lookup where needed; broker-native routing otherwise; no per-send management lookup |
 | Reconciliation | Per-service startup operation with transport-specific implementation | No permanent coordinator; no removal from absent declarations |
 | Serialization and message metadata | TinyBus runtime | Transport carries the encoded body without interpreting the command |
 | Physical destination and transfer | Transport provider | Connection details, queue names and database schema remain provider concerns |
@@ -110,7 +121,9 @@ concurrency and define shutdown behavior rather than starting unlimited tasks.
 
 | Situation | Proposed behavior |
 | --- | --- |
-| Missing route, unknown outbound contract or serialization failure | Fail before calling the transport |
+| Unknown outbound contract or serialization failure | Fail before calling the transport |
+| Missing local route in a cache-using provider | Fail before physical submission |
+| Broker cannot route a command | Surface send failure; do not report successful acceptance |
 | Transport explicitly rejects a send | Surface the failure; do not report acceptance |
 | Connection loss or cancellation while acceptance is uncertain | Surface uncertainty; do not promise the message was never accepted |
 | Unknown inbound contract/version or malformed payload | Invoke no handler; retain the failure through an agreed terminal disposition |
@@ -176,10 +189,11 @@ the common runtime to the first provider.
 
 Resolve these points before approving the draft:
 
-- For SendAsync, the logical destination comes from the local route cache as ServiceIdentity; any
-  Destination model must not encode a broker address. Physical mapping stays in the adapter. For PublishAsync,
-  propose destination omission and transport fan-out through reconciled subscriptions. This means
-  nullable Destination needs clear per-operation validation. Do not also fan out in the caller.
+- The latest RabbitMQ decision supersedes mandatory caller-resolved Destination for SendAsync.
+  Propose passing the envelope's contract to the transport and letting it select the route. For PublishAsync,
+  propose destination omission and transport fan-out through reconciled subscriptions. Revisit
+  whether OutgoingMessage/Destination are needed at all; the sketch above is not an approved
+  contract. Do not also fan out in the caller.
 - Bind a receiver to its local logical service at construction/configuration; ReceiveAsync need not
   repeat that identity. Define stream disposal, bounded prefetch and ownership of yielded deliveries.
 - CompleteAsync means recorded completion. AbandonAsync must have a precise meaning: release for
@@ -472,11 +486,13 @@ The user approved the registration hook and project scaffolding by requesting a 
 
 ## Paired provider topology proof — next design discussion
 
-The first paired slice should implement registration, additive topology reconciliation and route
-loading against real PostgreSQL and RabbitMQ instances. Apply the same behavioral checks to each:
+The first paired slice should implement registration, additive topology reconciliation and routing
+preparation against real PostgreSQL and RabbitMQ instances. Apply the same behavioral checks to each:
 same-service replica idempotency, conflicting owners including concurrent claims, preservation of
-newer declarations after older-replica reconciliation, filtered route reads and persistent facts
+newer declarations after older-replica reconciliation and persistent facts
 after recreating the provider. Each application host selects one provider.
+Filtered route reads are tested for cache-using providers; RabbitMQ tests contract-derived addressing
+and bindings without requiring an ownership lookup in the sender.
 
 Before implementation, agree ownership representation and discovery in each adapter. RabbitMQ
 direct exchanges route a matching key to one or more queues, so bindings alone do not enforce
@@ -489,11 +505,96 @@ must be specified honestly; the sequential accumulator's guarantees are not dist
 Provider selection hooks are ready, but UsePostgreSql/UseRabbitMq and their configuration contracts
 await real provider implementation. The first paired slice's design must pass the common-seam review.
 
+### Provider-specific readiness seam — implemented and verified, awaiting review
+
+The shared startup invariant is:
+
+**TinyBus is not ready until the selected provider has completed the initialization it requires
+for safe messaging.**
+
+Route loading and caching are PostgreSQL capabilities, not unconditional TinyBus runtime requirements.
+CommandRoute and CommandRouteCache are internal to TinyBus.PostgreSql. ICommandRouteSource and
+ITopologyReconciler were removed rather than imposed on RabbitMQ. The previous proposal requiring
+Management API route discovery for RabbitMQ is withdrawn.
+
+| Responsibility | PostgreSQL | RabbitMQ |
+| --- | --- | --- |
+| Reconcile local capabilities | Add or confirm topology in shared tables | Declare or confirm exchanges, queues and bindings |
+| Validate command ownership | Enforce a single owner in shared storage, including concurrent claims | Enforce a single owner through a provider-specific check during reconciliation/startup |
+| Prepare command routing | Load required routes; validate and publish an immutable local cache | Derive exchange/routing key from contract identity; owning service binds its queue |
+| Become ready | Reconciliation and validated cache publication have completed | Broker topology reconciliation and ownership validation have completed |
+| Send later | Resolve from the provider's prepared routes | Use native broker routing without reading owner metadata or loading a route cache |
+
+The startup sequences are therefore:
+
+```text
+PostgreSQL: reconcile topology -> load required routes -> build validated immutable cache -> ready
+RabbitMQ:  reconcile broker topology -> validate command ownership -> ready
+```
+
+These sequences describe readiness prerequisites, not permission to install conflicting bindings
+before checking ownership. The RabbitMQ implementation must prevent a competing owner from leaving
+an active command binding. Exact operation ordering and recovery require a real provider proof.
+
+**Routing != ownership validation.** Deterministic addressing tells the broker where to route;
+it does not prevent two services from binding queues for the same command. Ownership validation
+must handle simultaneous claims, allow replicas of the same service and reject different owners.
+It belongs to reconciliation/startup, independently of how sends find their destination. Cache
+consistency checks likewise do not establish authoritative ownership.
+
+If RabbitMQ needs readable ownership metadata, keep it as a small RabbitMQ-specific mechanism.
+Its representation and concurrency guarantees remain to be designed and verified. Management API
+is not a core operational requirement, and a sender must not need ownership reads to route a command.
+Do not introduce a common metadata-store abstraction, require PostgreSQL for RabbitMQ, or disguise missing
+ownership enforcement as successful broker declaration.
+
+#### Runtime refactor — implemented
+
+AddTinyBus previously created CommandRouteCache, used its registration to detect duplicate runtime
+registration, and wired a TopologyWorker that always resolved ICommandRouteSource. The refactor made
+these changes:
+
+- AddTinyBus registers ServiceTopology and one common TinyBusRuntime. It does not create a route
+  cache. The owned ServiceTopology registration also identifies an existing TinyBus runtime.
+- TinyBusRuntime owns the host startup boundary and awaits ITransport.InitializeAsync. It receives
+  exactly one selected transport and knows no provider substeps.
+- Cache-using providers retain required-route validation and immutable publication before readiness.
+  RabbitMQ registers no dummy route source or empty cache to satisfy common wiring.
+- Initial failure or cancellation propagates and fails startup. Do not signal readiness from an
+  eventually initialized background operation. Future refresh remains deferred.
+- Preserve staged registration, application overrides and the generated manifest/handler wiring.
+  IBus sending remains unimplemented; its eventual entry point must respect provider readiness.
+
+The public ITransport seam currently exposes only initialization with ServiceTopology and cancellation.
+Send, publish, receive and settlement are deliberately absent until their vertical slices. Providers
+do not register independent primary workers; Core retains one readable runtime lifecycle.
+
+Provider tests follow production ownership. Core tests reference neither provider. Route/cache and
+route-based startup proofs live in TinyBus.PostgreSql.Tests. TinyBus.RabbitMq.Tests is present in the
+solution and remains empty until RabbitMQ has concrete behavior worth testing.
+
+Behavioral checks prove startup stays pending while provider initialization is pending;
+failure/cancellation never signals readiness; missing or multiple transports fail startup; a provider
+without a route source/cache starts; and a cache-using provider cannot start before required routes are
+validated and published. The route-based and native-routing-shaped transports share TinyBusRuntime.
+Real PostgreSQL/RabbitMQ tests must still establish concurrent ownership, additive rolling deployments
+and restart recovery.
+
+The later send boundary should accept contract-bearing message data and let the selected provider
+route it; core must not require a caller-resolved ServiceIdentity for every command. Its exact
+signature remains a proposal. Broker readiness does not prove that every remote command is routable;
+the future send implementation must surface unroutable commands rather than claim acceptance.
+
+Provider-specific UsePostgreSql/UseRabbitMq configuration and concrete ownership mechanisms remain
+to be reviewed. No production provider code, schema or real-infrastructure experiment was added in
+this slice. This correction is why the two providers must be developed in parallel: PostgreSQL's
+readable route model must not become a universal core contract.
+
 ## Later work — intent only
 
 After reviewing this proof, agree the next small slice. Production topology reconciliation and
-snapshot loading, command preparation/serialization, receive execution and transport implementation
-remain separate work. Request ownership is not part of this command/event proof. Event subscriber
+provider-specific routing preparation, command preparation/serialization, receive execution and
+transport implementation remain separate work. Request ownership is not part of this command/event proof. Event subscriber
 facts identify services; per-handler durable outcomes and retry selection remain future design.
 
 Preserve the mandatory PostgreSQL/RabbitMQ comparison before approving production transport contracts.
@@ -543,4 +644,5 @@ application handler contracts.
   TinyBus retries on provider retries without defining their different purposes.
 
 Reconciliation publishes only local capabilities; shared transport infrastructure accumulates topology.
-Runtime consumes routing facts through local caches. There is no permanent TinyBus brain.
+Providers use local route caches or native broker routing as appropriate. There is no permanent
+TinyBus brain.

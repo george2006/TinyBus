@@ -638,18 +638,66 @@ classes, database migrations, client dependencies or provider behavior. Both bui
 with zero warnings/errors. Approved together with provider registration. Project creation does not
 resolve the provider-seam review below.
 
-### Next: paired provider topology proof — design pending
+Provider registration and project scaffolding committed as `387c07c`.
+
+### Provider-specific startup seam — implemented and verified, awaiting review
+
+CommandRouteCache and ICommandRouteSource are provider capabilities, not unconditional runtime
+requirements. AddTinyBus no longer creates a cache or requires a route source. The internal
+TinyBusRuntime awaits initialization required by the selected provider before readiness.
+
+**TinyBus is not ready until the selected provider has completed the initialization it requires
+for safe messaging.**
+
+- PostgreSQL: reconcile topology, load required command routes, build and publish a validated
+  immutable route cache, then ready.
+- RabbitMQ: declare/reconcile broker topology, validate command ownership, then ready.
+
+The approved public ITransport seam currently exposes only InitializeAsync(ServiceTopology,
+CancellationToken). Send, publish, receive and settlement remain later vertical slices. Core owns one
+internal TinyBusRuntime hosted service; providers do not register competing runtime workers. A host
+must resolve exactly one transport. Missing or multiple transports fail startup before initialization.
+
+Initial failure/cancellation fails startup. Staged registration and duplicate AddTinyBus rejection no
+longer depend on cache presence. Tests run the same runtime with a route-based transport that owns its
+cache and a native-routing-shaped transport with no route source or cache. Provider-specific routing
+types have moved out of Core: ITopologyReconciler and ICommandRouteSource are removed, while
+CommandRoute and CommandRouteCache are internal to TinyBus.PostgreSql. Provider tests now live in
+TinyBus.PostgreSql.Tests and TinyBus.RabbitMq.Tests; Core tests reference neither provider. The RabbitMQ
+project contains no placeholder tests before provider behavior exists. Release build and all 136 tests
+pass. Package verification passes
+for both packaged consumers and the expected diagnostic cases.
+
+### Following: paired provider topology proof — proposed, awaiting agreement
 
 Take one agreed behavior through PostgreSQL and RabbitMQ before adding the next. Start with provider
-registration, additive topology reconciliation and command-route loading. Exercise the same invariants
+registration, additive topology reconciliation and provider-appropriate routing. Exercise the same invariants
 against real infrastructure: replicas are idempotent, different command owners are rejected, older
-replicas preserve newer declarations, and requested routing facts survive provider recreation.
+replicas preserve newer declarations, and topology survives provider recreation.
 
-Before implementation, agree each provider's ownership and route-discovery representation, including
+Before implementation, agree each provider's ownership and routing representation, including
 concurrent claims. RabbitMQ bindings alone do not establish unique command ownership. Keep PostgreSQL
 rows and RabbitMQ resources private to their adapters; RabbitMQ must not require PostgreSQL to operate.
 Do not expand this proof into send/receive, retries or an outbox yet. The shared contract review and
 approval remain required before implementing either provider.
+
+The user corrected the RabbitMQ design: derive the exchange/routing key deterministically from the
+command contract and let the owning service bind its queue. Do not require a command route cache
+or Management API lookup for that path. If readable ownership metadata is necessary, keep its
+mechanism small and RabbitMQ-specific; Management API is not part of the core operational contract.
+
+The previous proposal requiring both providers to implement ICommandRouteSource is withdrawn.
+PostgreSQL can retain local ownership lookup where needed. The common send boundary should let
+the provider route from the envelope's contract, rather than requiring a service destination from
+core. That signature and the exact startup refactor remain to be reviewed before code changes.
+
+Broker topology readiness does not prove every remote command has an owner; unroutable sends need
+explicit failure handling.
+
+**Routing != ownership validation.** Unique command ownership remains required. Bindings alone do
+not enforce it, so separately design and prove the RabbitMQ conflict check without making ownership
+reads a prerequisite for routing.
+The revised comparison is in docs/transport-plan.md. No provider code or real experiment has run.
 
 ### Later: outbound requirements from IBus usage — deferred
 

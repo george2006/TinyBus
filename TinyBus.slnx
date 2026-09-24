@@ -13,6 +13,8 @@
     <Project Path="src/TinyBus.SourceGen/TinyBus.SourceGen.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/TinyBus.PostgreSql.Tests/TinyBus.PostgreSql.Tests.csproj" />
+    <Project Path="tests/TinyBus.RabbitMq.Tests/TinyBus.RabbitMq.Tests.csproj" />
     <Project Path="tests/TinyBus.Tests/TinyBus.Tests.csproj" />
     <Project Path="tests/TinyBus.SourceGen.Tests/TinyBus.SourceGen.Tests.csproj" />
   </Folder>

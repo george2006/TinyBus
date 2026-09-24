@@ -1,4 +1,4 @@
-namespace TinyBus.Tests;
+namespace TinyBus.PostgreSql.Tests;
 
 public sealed class CommandRouteCacheTests
 {

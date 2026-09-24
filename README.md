@@ -33,16 +33,17 @@ services.AddTinyBus(bus =>
 ```
 
 The generated entry point binds the root application's composed manifest, including referenced
-handler libraries. It registers ServiceTopology, scoped handlers, the local route cache and the
-topology worker. The callback runs during registration. Configure one TinyBus runtime per service
+handler libraries. It registers ServiceTopology, scoped handlers and the common TinyBus runtime.
+The callback runs during registration. Configure one TinyBus runtime per service
 collection; a second AddTinyBus call is rejected. The application supplies handler dependencies
 and owns service-provider scopes.
 
-Host startup requires implementations of ITopologyReconciler and ICommandRouteSource in DI. Missing
-providers or failed initialization prevent startup. There is no default production provider yet.
-Transport packages can extend TinyBusOptions and register both interfaces through its Services
-collection. The planned selection methods are UsePostgreSql and UseRabbitMq. Their projects are
-scaffolded; the provider implementations and those methods are not available yet.
+Host startup requires exactly one ITransport in DI. TinyBus awaits its InitializeAsync operation
+before the host becomes ready; missing, duplicate or failed transport initialization prevents startup.
+AddTinyBus does not create a command route cache or require route discovery. Transport packages extend
+TinyBusOptions and register their implementation through its Services collection. The planned selection
+methods are UsePostgreSql and UseRabbitMq. Their projects are scaffolded; the provider implementations
+and those methods are not available yet.
 Outbound requirements will be inferred from IBus usage in a later generator slice; this registration
 slice currently supplies no outbound requirements and does not implement IBus sending.
 TinyBus references DI and Hosting abstractions; applications supply their DI container and host.
@@ -116,9 +117,10 @@ including handler execution, cross-assembly diagnostics and compiler-only genera
 
 The current implementation contains transport-independent contracts, generated manifests,
 compile-time topology diagnostics, scoped registrations and local handler execution.
-Provider contracts expose additive service reconciliation through `ITopologyReconciler` and startup
-route loading through `ICommandRouteSource`. These exchange logical routing facts (`CommandRoute`);
-physical destinations belong to the provider. Only an in-memory test implementation exists so far.
-An internal topology worker gates host startup on successful reconciliation, required-route validation
-and immutable cache publication. AddTinyBus registers that worker; production providers remain future work.
+`ITransport.InitializeAsync` is the provider startup seam. The internal TinyBus runtime awaits exactly
+one transport before host readiness. PostgreSQL owns its internal command-route fact and immutable
+cache; RabbitMQ does not implement or register them. Only test transport implementations exist so far.
+Production providers remain future work.
+Core, PostgreSQL and RabbitMQ have separate test projects so provider mechanics cannot leak into the
+Core test dependency graph. RabbitMQ tests begin when its first concrete behavior is implemented.
 Transports, persistence, background refresh, receive workers and retries are not implemented yet.

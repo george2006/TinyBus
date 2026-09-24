@@ -1,7 +1,7 @@
-namespace TinyBus.Tests;
+namespace TinyBus.PostgreSql.Tests;
 
 // Simulates shared transport topology for tests. It retains routing facts, never manifests.
-internal sealed class TopologyAccumulator : ITopologyReconciler, ICommandRouteSource
+internal sealed class TopologyAccumulator
 {
     private readonly Dictionary<ContractIdentity, CommandRoute> commandRoutes = new();
     private readonly Dictionary<ContractIdentity, HashSet<ServiceIdentity>> eventSubscriptions = new();

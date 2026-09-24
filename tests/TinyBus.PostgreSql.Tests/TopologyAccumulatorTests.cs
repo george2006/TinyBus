@@ -1,4 +1,4 @@
-namespace TinyBus.Tests;
+namespace TinyBus.PostgreSql.Tests;
 
 public sealed class TopologyAccumulatorTests
 {
@@ -164,17 +164,14 @@ public sealed class TopologyAccumulatorTests
         var payments = Topology("payments", capture);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var accumulator = new TopologyAccumulator { Availability = availability.Task };
-        ITopologyReconciler reconciler = accumulator;
-        ICommandRouteSource source = accumulator;
-
-        var reconciliation = reconciler.ReconcileAsync(payments);
+        var reconciliation = accumulator.ReconcileAsync(payments);
 
         Assert.False(reconciliation.IsCompleted);
         availability.SetResult();
         await reconciliation;
 
         var requiredContracts = new[] { capture.Contract };
-        var routes = await source.LoadAsync(requiredContracts);
+        var routes = await accumulator.LoadAsync(requiredContracts);
         var route = Assert.Single(routes);
         Assert.Equal(capture.Contract, route.Contract);
         Assert.Equal(payments.Service, route.Service);
@@ -189,10 +186,9 @@ public sealed class TopologyAccumulatorTests
         await accumulator.ReconcileAsync(payments);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         accumulator.Availability = availability.Task;
-        ICommandRouteSource source = accumulator;
         var requiredContracts = new[] { capture.Contract };
 
-        var loading = source.LoadAsync(requiredContracts);
+        var loading = accumulator.LoadAsync(requiredContracts);
 
         Assert.False(loading.IsCompleted);
         availability.SetResult();
@@ -212,10 +208,9 @@ public sealed class TopologyAccumulatorTests
         var payments = Topology("payments", capture, orderPlaced);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var accumulator = new TopologyAccumulator { Availability = availability.Task };
-        ITopologyReconciler reconciler = accumulator;
         var failure = new InvalidOperationException("Shared topology is unavailable.");
 
-        var reconciliation = reconciler.ReconcileAsync(payments);
+        var reconciliation = accumulator.ReconcileAsync(payments);
         availability.SetException(failure);
         var observed = await Assert.ThrowsAsync<InvalidOperationException>(async () => await reconciliation);
 
@@ -238,11 +233,10 @@ public sealed class TopologyAccumulatorTests
         await accumulator.ReconcileAsync(payments);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         accumulator.Availability = availability.Task;
-        ICommandRouteSource source = accumulator;
         var failure = new InvalidOperationException("Shared topology is unavailable.");
         var requiredContracts = new[] { capture.Contract };
 
-        var loading = source.LoadAsync(requiredContracts);
+        var loading = accumulator.LoadAsync(requiredContracts);
         availability.SetException(failure);
         var observed = await Assert.ThrowsAsync<InvalidOperationException>(async () => await loading);
 
@@ -259,7 +253,6 @@ public sealed class TopologyAccumulatorTests
         var payments = Topology("payments", capture, orderPlaced);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var accumulator = new TopologyAccumulator();
-        ITopologyReconciler reconciler = accumulator;
         using var cancellation = new CancellationTokenSource();
         var token = cancellation.Token;
 
@@ -272,7 +265,7 @@ public sealed class TopologyAccumulatorTests
             accumulator.Availability = availability.Task;
         }
 
-        var reconciliation = reconciler.ReconcileAsync(payments, token);
+        var reconciliation = accumulator.ReconcileAsync(payments, token);
 
         if (!cancelBeforeCall)
         {
@@ -301,7 +294,6 @@ public sealed class TopologyAccumulatorTests
         var accumulator = new TopologyAccumulator();
         await accumulator.ReconcileAsync(payments);
         var availability = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        ICommandRouteSource source = accumulator;
         var requiredContracts = new[] { capture.Contract };
         using var cancellation = new CancellationTokenSource();
         var token = cancellation.Token;
@@ -315,7 +307,7 @@ public sealed class TopologyAccumulatorTests
             accumulator.Availability = availability.Task;
         }
 
-        var loading = source.LoadAsync(requiredContracts, token);
+        var loading = accumulator.LoadAsync(requiredContracts, token);
 
         if (!cancelBeforeCall)
         {

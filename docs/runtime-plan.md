@@ -312,12 +312,11 @@ behavior before its implementation, and retain the transport-seam review before 
 ### 3. Transport-independent outbound and inbound boundaries
 
 The current plan and in-memory topology slice live in [transport-plan.md](transport-plan.md).
-The ownership/cache proof and public ITopologyReconciler/ICommandRouteSource seams are approved.
-ITopologyReconciler writes the calling service's capabilities; ICommandRouteSource reads accumulated
-command ownership. CommandRoute is public, while its immutable runtime cache remains internal and
-synchronous. CommandRoute is a passive routing fact. Ownership enforcement belongs to reconciliation;
-the cache checks only the consistency of its supplied snapshot. Production send/receive interfaces
-remain drafts.
+The earlier ownership/cache proof introduced ITopologyReconciler and ICommandRouteSource as public
+provider seams. Comparing PostgreSQL with RabbitMQ proved they were mechanics rather than common
+semantics, so both interfaces were removed. CommandRoute and its immutable cache are internal to
+TinyBus.PostgreSql. Ownership enforcement belongs to each transport's initialization. Production
+send/receive operations remain future additions to ITransport.
 Transport remains the agreed name. Successful sending means confirmed durable transport acceptance,
 separate from handler completion. Start with a command journey and challenge gaps in routing,
 outbound contract metadata, ownership and failure behavior before introducing interfaces.
@@ -325,43 +324,67 @@ outbound contract metadata, ownership and failure behavior before introducing in
 Each service combines its generated manifest(s) with ServiceIdentity as local ServiceTopology and
 reconciles only its own capabilities into shared transport infrastructure. Services never exchange
 full manifests. No central TinyBus coordinator, global manifest service or permanent daemon exists.
-The infrastructure accumulates ownership/subscription facts; runtime caches contain only needed
-command routes. Applications do not maintain a second manual routing map, and shared DTO assemblies
-are optional. Repeated instances represent one logical service.
+The infrastructure accumulates ownership/subscription facts. Providers using a local route cache
+load only needed command routes; RabbitMQ uses native broker routing. Applications do not maintain
+a second manual routing map, and shared DTO assemblies are optional. Repeated instances represent
+one logical service.
 
 For the current slice reconciliation is additive: absence from a manifest is never deletion intent.
 An older replica cannot erase declarations introduced by a newer one. Retirement, ownership transfer
-and deletion require a later revision policy. Startup reconciliation and startup route-cache loading
-are the intended initial lifecycle. Lookups are synchronous and local; periodic refresh and
-notification mechanisms remain deferred.
+and deletion require a later revision policy. Startup awaits the selected provider's initialization.
+Where a route cache is used, lookups remain synchronous and local. Periodic refresh and notification
+mechanisms remain deferred.
 
-The internal TopologyWorker : BackgroundService reconciles, loads required routes
-and replaces the local immutable snapshot. It replaces the rejected TopologyInitializer proposal.
-Startup readiness is now agreed: await reconciliation, load all required command routes, validate
-and publish the immutable snapshot before TinyBus is started. Initial failure or cancellation fails
-startup; initialization must not race the first Send. TopologyWorker.StartAsync owns this sequence,
-with ExecuteAsync reserved for later background refresh. The user approved Hosting.Abstractions in
-TinyBus. Worker implementation and real-host tests are complete and approved; production providers
-remain later work.
+The original TopologyWorker proved startup gating through reconciliation and route loading. The
+provider comparison showed those substeps were PostgreSQL-shaped, so TinyBusRuntime now owns the
+common host lifecycle and awaits one selected ITransport.InitializeAsync(ServiceTopology). The
+transport owns its initialization mechanics. Initial failure or cancellation fails startup;
+initialization must not race the first Send. Receive execution remains a later runtime slice.
 The agreed application entry point is services.AddTinyBus(bus => { bus.Service("payments"); }).
-Generated topology, scoped handlers, cache and worker registration are now wired behind that API,
-and approved. The user selected IBus usage as the source of outbound requirements, alongside
+Generated topology, scoped handlers and common runtime registration are wired behind that API.
+The user selected IBus usage as the source of outbound requirements, alongside
 handler interfaces for inbound capabilities. Usage analysis and cross-assembly requirements are
 explicitly deferred; registration currently supplies no outbound requirements. A manually maintained
 outbound-command list in registration is rejected, including RequireCommand as a fallback. IBus sending
 is not implemented. Details are recorded in [transport-plan.md](transport-plan.md).
 
 Provider selection belongs inside the options callback through package extensions such as
-UsePostgreSql or UseRabbitMq. TinyBusOptions.Services now supports those extensions; the test provider
-proves registration of both topology capabilities and real-host startup. Production extensions are
-not implemented yet. The user requested PostgreSQL and RabbitMQ implementations developed through
+UsePostgreSql or UseRabbitMq. TinyBusOptions.Services now supports those extensions; test transports
+prove route-based and native-routing-shaped initialization through the same runtime. Production
+extensions are not implemented yet. The user requested PostgreSQL and RabbitMQ implementations developed through
 the same small slices, with real provider tests driving changes to the common contracts. Both
 provider projects are scaffolded in the solution. Each host selects one provider.
 
-PostgreSQL persists topology in shared tables; ASB materializes transport-native resources and
-ownership metadata. The common contract does not mandate shared database storage or encode physical
-destination names. The ASB representation is an adapter decision, not a prerequisite for the memory
-proof. The user's draft transport interfaces and ten design conclusions are recorded in the plan.
+Implemented correction: route loading and caching are PostgreSQL capabilities, not unconditional
+runtime requirements. AddTinyBus does not create a cache, and TinyBusRuntime depends only on one
+selected ITransport. Preserve the runtime's host startup
+boundary while making the initialization prerequisites provider-specific:
+
+| Provider | Required startup work before readiness |
+| --- | --- |
+| PostgreSQL | Reconcile topology, load required command routes, build and publish a validated immutable route cache |
+| RabbitMQ | Declare/reconcile broker topology and validate command ownership |
+
+**TinyBus is not ready until the selected provider has completed the initialization it requires
+for safe messaging.** Initial failure or cancellation fails startup. Eventual background initialization
+does not meet this invariant. Missing or multiple transports fail host startup before initialization.
+RabbitMQ must not satisfy the contract with a dummy route source or cache.
+
+RabbitMQ derives the exchange/routing key deterministically from the command contract; the owning
+service binds its queue. Routing does not require sender-side ownership discovery. **Routing !=
+ownership validation:** bindings alone allow competing services, so a provider-specific check must
+enforce unique command ownership during reconciliation/startup, including concurrent claims.
+If readable ownership metadata is necessary, keep it small and RabbitMQ-specific. Management API
+is not part of the core operational contract. The ownership mechanism remains to be proved.
+
+PostgreSQL persists topology in shared tables; RabbitMQ materializes broker resources. Their routing
+representations stay private. The two providers are developed in parallel specifically to prevent
+PostgreSQL concepts leaking into core. Earlier ASB exploration remains a reference. The detailed
+refactor scope and checks are recorded in [transport-plan.md](transport-plan.md).
+
+Tests preserve the same boundary: TinyBus.Tests references only Core, while TinyBus.PostgreSql.Tests
+and TinyBus.RabbitMq.Tests reference their respective provider. The RabbitMQ project has no placeholder
+tests; its first tests arrive with its first concrete provider behavior.
 
 Design the smallest concrete transport seam for TinyBus outbound operations and native delivery.
 The design must define:
@@ -373,8 +396,9 @@ The design must define:
 - serialization ownership
 - correlation and causation propagation
 
-No transport interface is introduced until its PostgreSQL implementation and the TinyBus runtime
-operations that consume it are understood concretely.
+ITransport currently contains only the initialization operation consumed by TinyBusRuntime. Add send,
+receive and settlement operations only after their concrete runtime consumers and both provider
+implementations are understood.
 
 The transport boundary must also be implementable by a second, structurally different transport.
 It cannot expose PostgreSQL concepts such as tables, rows, polling, leases, `LISTEN/NOTIFY` or

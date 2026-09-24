@@ -2,8 +2,9 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Threading;
+using TinyBus;
 
-namespace TinyBus;
+namespace TinyBus.PostgreSql;
 
 internal sealed class CommandRouteCache
 {

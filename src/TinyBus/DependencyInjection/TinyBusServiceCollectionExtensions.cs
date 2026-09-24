@@ -27,13 +27,8 @@ public static class TinyBusServiceCollectionExtensions
 
         var manifest = new TManifest();
         var topology = new ServiceTopology(options.ServiceIdentity, manifest.Messages);
-        // This registration slice configures inbound capabilities; outbound declarations follow separately.
-        var requiredCommands = Array.Empty<ContractIdentity>();
-        var cache = new CommandRouteCache();
-
         registrations.AddSingleton(topology);
-        registrations.AddSingleton(cache);
-        RegisterTopologyWorker(registrations, topology, requiredCommands, cache);
+        registrations.AddSingleton<IHostedService>(CreateRuntime);
 
         ApplyRegistrations(services, registrations);
 
@@ -60,27 +55,35 @@ public static class TinyBusServiceCollectionExtensions
         }
     }
 
-    private static void RegisterTopologyWorker(
-        IServiceCollection services,
-        ServiceTopology topology,
-        IReadOnlyCollection<ContractIdentity> requiredCommands,
-        CommandRouteCache cache)
+    private static IHostedService CreateRuntime(IServiceProvider services)
     {
-        Func<IServiceProvider, IHostedService> createWorker = provider =>
-        {
-            var reconciler = provider.GetRequiredService<ITopologyReconciler>();
-            var source = provider.GetRequiredService<ICommandRouteSource>();
-            return new TopologyWorker(reconciler, source, topology, requiredCommands, cache);
-        };
+        var transport = ResolveTransport(services);
+        var topology = services.GetRequiredService<ServiceTopology>();
+        var runtime = new TinyBusRuntime(transport, topology);
 
-        services.AddSingleton<IHostedService>(createWorker);
+        return runtime;
+    }
+
+    private static ITransport ResolveTransport(IServiceProvider services)
+    {
+        var transports = services.GetServices<ITransport>();
+        var registeredTransports = new List<ITransport>(transports);
+
+        if (registeredTransports.Count != 1)
+        {
+            throw new InvalidOperationException("TinyBus requires exactly one transport provider.");
+        }
+
+        var transport = registeredTransports[0];
+
+        return transport;
     }
 
     private static void ValidateSingleRuntime(IServiceCollection services)
     {
         foreach (var registration in services)
         {
-            if (registration.ServiceType == typeof(CommandRouteCache))
+            if (registration.ServiceType == typeof(ServiceTopology))
             {
                 throw new InvalidOperationException("TinyBus is already registered in this service collection.");
             }
