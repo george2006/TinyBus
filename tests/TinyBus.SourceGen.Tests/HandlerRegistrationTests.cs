@@ -233,7 +233,7 @@ public sealed class HandlerRegistrationTests
     }
 
     [Fact]
-    public void Keeps_request_metadata_without_registering_request_handlers()
+    public void Registers_scoped_request_handlers_and_preserves_their_metadata()
     {
         const string source = """
             using System.Threading;
@@ -259,11 +259,22 @@ public sealed class HandlerRegistrationTests
                 {
                     var services = new ServiceCollection();
                     TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
+                    TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
+                    var options = new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true };
+                    using var provider = services.BuildServiceProvider(options);
+                    using var scope = provider.CreateScope();
+                    using var otherScope = provider.CreateScope();
+                    var handler = scope.ServiceProvider.GetRequiredService<IRequestHandler<GetStatus, Status>>();
+                    var repeatedHandler = scope.ServiceProvider.GetRequiredService<IRequestHandler<GetStatus, Status>>();
+                    var otherHandler = otherScope.ServiceProvider.GetRequiredService<IRequestHandler<GetStatus, Status>>();
                     var manifest = new TinyBus.Generated.GeneratedTinyBusManifest();
                     var requestMetadataPreserved = manifest.Messages.Count == 1
                         && manifest.Messages[0].Kind == MessageKind.Request;
+                    var reusedWithinScope = ReferenceEquals(handler, repeatedHandler);
+                    var isolatedBetweenScopes = !ReferenceEquals(handler, otherHandler);
 
-                    return requestMetadataPreserved && services.Count == 0;
+                    return requestMetadataPreserved && services.Count == 1
+                        && reusedWithinScope && isolatedBetweenScopes;
                 }
             }
             """;

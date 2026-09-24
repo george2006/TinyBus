@@ -31,6 +31,7 @@ internal sealed class GetPaymentStatusHandler
         GetPaymentStatus request,
         CancellationToken cancellationToken)
     {
-        return ValueTask.FromResult(new PaymentStatus(request.PaymentId, "Unknown"));
+        var response = new PaymentStatus(request.PaymentId, "Unknown");
+        return ValueTask.FromResult(response);
     }
 }

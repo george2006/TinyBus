@@ -12,22 +12,42 @@ TinyDispatcher stays outside the TinyBus consumption path. TinyDispatcher models
 request/handler dispatch; it does not own the distributed semantics of commands, events,
 subscriptions, delivery attempts or acknowledgements.
 
-TinyBus will execute these handlers itself:
+TinyBus owns local execution for:
 
 ```text
 ICommandHandler<TCommand>
 IEventHandler<TEvent>
-IRequestHandler<TRequest, TResponse>
 ```
 
 The source generator may later emit typed invocation plumbing once the runtime has a concrete need
 for it. No runtime reflection or TinyDispatcher adapter is planned for handler execution.
+
+### Request/response separates callers from consumers
+
+Keep IBus.RequestAsync<TRequest, TResponse> as the caller-facing API: send a request and await a
+typed reply. The approved developer experience retains IRequestHandler<TRequest, TResponse> for
+application code: return a business response and let TinyBus create and send the correlated reply.
+The returned value crosses the local handler/runtime boundary; the reply crosses the transport as
+a separate message. Business replies and delivery outcomes are separate concerns.
+
+This convenience models one logical response produced when handler processing completes. It does
+not require context.Reply or an output property. Deferred and multi-response conversations are
+outside this initial contract and would require separately designed messaging capabilities.
+
+The local registration and invocation slice is implemented below. It does not yet provide
+correlation, reply routing or reliable request/reply; those runtime semantics remain under discussion.
+
+Request deliberately names a narrower concept than Command and Event: one request with one typed
+reply. The local handler shape is approved; context and distributed delivery remain separate design
+work. The goal is clearer application code with a compiler-checked response contract.
 
 ### Handler context — future work
 
 Handlers will need a context for the current message and delivery. Candidate information includes
 message ID, correlation, causation, headers and delivery details. The context should also provide
 an injected publishing capability so a handler can publish through TinyBus's outbound path.
+The automatic single-response request path does not require a context operation to send its reply.
+Additional outbound operations and any future explicit reply capability require separate design.
 
 Before implementation, agree how the context reaches handlers, its lifetime and allocation cost,
 and how publishing propagates correlation and causation. Transaction and retry behavior must be
@@ -71,7 +91,8 @@ Planned slices:
 
 Implementation details, verification and approval history live in [`PLAN.md`](../PLAN.md).
 Multi-assembly topology and the generator refinements are approved. Native handler activation and
-invocation is the current feature; registration and typed command execution are implemented.
+invocation is the current feature; registration and local command, event and request execution are
+implemented, verified and approved.
 
 Approved seam:
 
@@ -113,7 +134,8 @@ Proposed slices:
 2. Execute a typed command through the caller's scoped service provider, propagating completion,
    failures and cancellation. Measure TinyBus dispatch allocations.
 3. Execute all event handlers once and report a result record per handler. Implemented, verified and approved.
-4. Register and execute requests and return their responses.
+4. Register and invoke typed request handlers locally. Implemented, verified and approved. Automatic
+   replies over the transport require separately agreed runtime behavior and implementation slices.
 5. Extend the host and packaged consumer to prove execution across assembly boundaries.
 
 #### Slice 1: command and event handler registration — implemented, verified and approved
@@ -209,6 +231,67 @@ Future delivery orchestration will own persisted progress, retries, acknowledgem
 concerns. A message ID identifies the event; a consumer/subscription identity identifies its recipient.
 Design that identity as delivery metadata rather than modifying the domain payload. No durable
 consumer identity or delivery coordinator is introduced in this slice.
+
+#### Slice 4: typed request execution — implemented, verified and approved
+
+Generated manifests register IRequestHandler<TRequest, TResponse> with the approved scoped lifetime,
+including internal handlers in referenced assemblies. Repeated registration preserves each binding
+once. The approved internal RequestExecutor resolves the handler from the supplied IServiceProvider
+and returns HandleAsync directly:
+
+```csharp
+ValueTask<TResponse> ExecuteAsync<TRequest, TResponse>(
+    TRequest request,
+    CancellationToken cancellationToken = default)
+```
+
+The caller owns the scope through completion. Response values, synchronous/asynchronous failures
+and handler cancellation propagate unchanged. This adds no public executor API, invocation delegates,
+runtime reflection, retries or reply routing. The application still implements the existing public
+IRequestHandler interface; only local invocation machinery is internal.
+
+Verification covers generated local and referenced registrations, scoped isolation, repeated
+registration, exact request/token/response forwarding, pending completion, failures and cancellation.
+All eighty-five tests pass in Release. Completed and pending dispatch each allocate zero bytes over
+10,000 warmed calls on the calling thread. Startup, first activation and handler-owned task and
+continuation work are outside that measurement.
+
+#### Request/response transport design discussion — open
+
+Agreed API direction:
+
+- The caller sends a request through IBus.RequestAsync<TRequest, TResponse>.
+- Application code implements IRequestHandler<TRequest, TResponse> and returns ValueTask<TResponse>.
+- TinyBus invokes the handler and turns its returned value into a correlated reply message.
+- TinyBus completes the caller's wait when that reply arrives. Sending a reply is separate from
+  returning the CLR value locally; a successful handler return alone is not proof of reply delivery.
+
+The following behavior is proposed, not yet approved:
+
+- Start with one logical reply per successful request handling. Extra sends/publications use the
+  future context, without changing what the returned response means.
+- Bound the caller's wait with a timeout. Caller cancellation or timeout stops waiting; it does not
+  promise to cancel or roll back consumer work that may already have started.
+- Keep the await in the requesting process for the first version. A process restart loses that
+  wait even if messages are durable. Durable business workflow recovery is a separate capability.
+- Correlate a reply to a specific request message, using transport-neutral delivery metadata.
+  A general conversation CorrelationId alone is insufficient when several requests share it.
+- Capture the outgoing reply durably before acknowledging successful request processing. Atomicity
+  with business writes depends on the eventual transaction/outbox integration and is not assumed.
+- Complete a pending wait once. Define late and duplicate reply handling explicitly; do not use a
+  late reply as a reason to rerun completed business work.
+
+Still to agree: timeout configuration, terminal handler-failure behavior at the caller, response
+contract validation, null response semantics, duplicate request handling and the transaction
+boundary. Domain outcomes belong in TResponse; infrastructure failures need a separate policy.
+
+Responsibility boundaries: the application handler performs business work; internal invocation
+resolves and calls it; delivery orchestration captures/sends replies and handles recovery; caller
+correlation completes the pending wait. RequestExecutor remains internal and owns only local
+invocation; the response sender and caller correlation mechanism have not been implemented.
+
+Approval covers the local registration and invocation slice above. Agree the remaining transport
+behavior before its implementation, and retain the transport-seam review before PostgreSQL work.
 
 ### 3. Transport-independent outbound and inbound boundaries
 

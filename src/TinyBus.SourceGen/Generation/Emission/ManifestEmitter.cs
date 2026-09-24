@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using TinyBus.SourceGen.Generation.Planning;
 using TinyBus.SourceGen.Model;
@@ -102,11 +103,6 @@ internal sealed class ManifestEmitter
             cancellationToken.ThrowIfCancellationRequested();
             var message = plan.Messages[index];
 
-            if (message.Kind == MessageHandlerKind.Request)
-            {
-                continue;
-            }
-
             writer.WriteLine();
             WriteHandlerRegistration(writer, message, index);
         }
@@ -120,13 +116,11 @@ internal sealed class ManifestEmitter
         MessageHandlerDefinition message,
         int index)
     {
-        var handlerInterface = message.Kind == MessageHandlerKind.Command
-            ? "global::TinyBus.ICommandHandler"
-            : "global::TinyBus.IEventHandler";
+        var handlerInterface = FormatHandlerInterface(message);
 
         writer.WriteLine($"var handlerRegistration{index} = global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped(");
         writer.Indent();
-        writer.WriteLine($"typeof({handlerInterface}<{message.MessageTypeName}>),");
+        writer.WriteLine($"typeof({handlerInterface}),");
         writer.WriteLine($"typeof({message.HandlerTypeName}));");
         writer.Unindent();
 
@@ -257,6 +251,17 @@ internal sealed class ManifestEmitter
         writer.WriteLine("return messages.AsReadOnly();");
         writer.Unindent();
         writer.WriteLine("}");
+    }
+
+    private static string FormatHandlerInterface(MessageHandlerDefinition message)
+    {
+        return message.Kind switch
+        {
+            MessageHandlerKind.Command => $"global::TinyBus.ICommandHandler<{message.MessageTypeName}>",
+            MessageHandlerKind.Event => $"global::TinyBus.IEventHandler<{message.MessageTypeName}>",
+            MessageHandlerKind.Request => $"global::TinyBus.IRequestHandler<{message.MessageTypeName}, {message.ResponseTypeName}>",
+            _ => throw new InvalidOperationException("Unsupported handler kind.")
+        };
     }
 
     private static string FormatResponseType(MessageHandlerDefinition message)

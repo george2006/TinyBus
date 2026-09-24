@@ -32,7 +32,7 @@ The topology includes local handlers and contributions from assemblies reference
 compilation. Its service identity is supplied by the application; it is not inferred from an
 assembly name. This creates metadata only and does not activate handlers or start a transport.
 
-Register the generated command and event handlers with Microsoft DI:
+Register the generated command, event and request handlers with Microsoft DI:
 
 ```csharp
 var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
@@ -41,7 +41,7 @@ TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
 
 This includes local and referenced handlers, with scoped lifetimes. Repeated calls preserve each
 service/implementation pair once, including all distinct event handlers. The application supplies
-handler dependencies and owns service-provider scopes. Request registration remains a later slice.
+handler dependencies and owns service-provider scopes.
 TinyBus references DI abstractions; building a provider requires the application's
 DI container package.
 
@@ -54,8 +54,7 @@ await executor.ExecuteAsync(command, cancellationToken);
 
 The executor resolves the registered command handler and returns its completion directly. Keep the
 scope alive until execution completes. Failures and cancellation propagate to the caller. This is
-local handler execution; sending through a transport and request execution remain
-later slices.
+local handler execution; sending through a transport remains a later slice.
 
 Execute all registered event handlers through an existing scope:
 
@@ -68,6 +67,30 @@ Each handler runs once, sequentially in registration order. Each EventHandlerRes
 HandlerType and Succeeded: true on success or false on a handler exception. Failures do not stop
 later handlers. Caller cancellation propagates. The executor performs no retries. Results are local
 to this call; durable outcome storage and retry mechanics remain future work.
+
+A request handler declares its response type and returns the business response:
+
+```csharp
+public sealed record GetPaymentStatus(Guid PaymentId);
+public sealed record PaymentStatus(Guid PaymentId, string Status);
+
+internal sealed class GetPaymentStatusHandler
+    : IRequestHandler<GetPaymentStatus, PaymentStatus>
+{
+    public ValueTask<PaymentStatus> HandleAsync(
+        GetPaymentStatus request,
+        CancellationToken cancellationToken)
+    {
+        var response = new PaymentStatus(request.PaymentId, "Unknown");
+        return ValueTask.FromResult(response);
+    }
+}
+```
+
+Generated scoped registration and internal local invocation are implemented. The intended
+request/reply experience lets TinyBus turn the returned value into a correlated reply, without
+requiring a reply call in the handler. Transport reply sending, reception and the caller's
+IBus.RequestAsync runtime are still future work.
 
 Run the composed topology sample:
 
@@ -82,6 +105,7 @@ The libraries keep their handlers internal; composition uses their generated pub
 Run `tests/TinyBus.PackageTests/Verify-Package.ps1` to verify the same sample through the NuGet package,
 including cross-assembly diagnostics and compiler-only generator placement.
 
-The current bootstrap contains the transport-independent contracts, generated manifests and
-compile-time topology diagnostics. Transports, persistence, workers, retries and distributed
+The current implementation contains transport-independent contracts, generated manifests,
+compile-time topology diagnostics, scoped registrations and local handler execution.
+Transports, persistence, workers, retries and distributed
 runtime behavior are intentionally not implemented yet.

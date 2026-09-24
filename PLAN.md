@@ -376,3 +376,39 @@ Approved folder refactor: public interfaces live in Abstractions; executors in E
 contract identity and BusContractAttribute in Messaging; service topology and contribution metadata
 in Topology. Public namespaces remain TinyBus. All fourteen moved files retain their original contents.
 The result record and completed slice were approved by the user's instruction to commit and move on.
+
+Slice 3 and the folder refactor committed as `fddcbf9`.
+
+### Native activation slice 4: typed request execution — implemented, verified and approved
+
+Approved developer experience: callers use IBus.RequestAsync<TRequest, TResponse>; application
+developers implement IRequestHandler<TRequest, TResponse> and return the business response.
+TinyBus owns converting that value into a correlated reply message. A reply call or output property
+is not required for this single-response path. A business reply remains separate from delivery
+success or failure.
+
+The approved local slice adds generated scoped request-handler registrations and an internal
+RequestExecutor. It resolves the typed handler and returns its ValueTask<TResponse> directly,
+preserving the response, completion, failures and cancellation. No additional public executor API,
+invocation delegates or async wrapper are introduced. Referenced internal handlers register through
+their owning manifests, and repeated registration remains idempotent.
+
+Request names the narrow promise of one typed reply alongside Command and Event. This local
+handler shape is approved; context and distributed delivery still require their own design.
+The existing payment-status sample shows the application shape without a reply call or output bag.
+
+All eighty-five tests pass in Release. Coverage includes scoped registration and invocation,
+referenced internal handlers, pending completion, failures, cancellation and missing registration.
+Allocation tests measure zero bytes over 10,000 warmed dispatches for completed and pending results;
+scope creation, first activation and handler-owned task/continuation work are excluded.
+The Release solution build passes with zero warnings/errors. Inspected generated sample code
+registers the closed request/response interface, and isolated package verification passes for
+single-assembly and multi-assembly consumers, including the existing diagnostic checks.
+
+The design discussion in docs/runtime-plan.md retains open transport semantics: the lifetime of the
+caller's wait, timeout/cancellation, terminal failures, duplicate/late messages and durable reply
+capture. IBus.RequestAsync, correlated reply sending and response reception remain unimplemented.
+Agree those behaviors and their slices before implementing distributed request/reply.
+
+Approved by the user's instruction to commit and move on. The next slice proves local execution
+in the host sample and isolated packaged consumers across assembly boundaries.
