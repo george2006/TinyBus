@@ -136,7 +136,8 @@ Proposed slices:
 3. Execute all event handlers once and report a result record per handler. Implemented, verified and approved.
 4. Register and invoke typed request handlers locally. Implemented, verified and approved. Automatic
    replies over the transport require separately agreed runtime behavior and implementation slices.
-5. Extend the host and packaged consumer to prove execution across assembly boundaries.
+5. Extend the host and packaged consumer to prove execution across assembly boundaries. Implemented,
+   verified and approved.
 
 #### Slice 1: command and event handler registration — implemented, verified and approved
 
@@ -255,6 +256,22 @@ registration, exact request/token/response forwarding, pending completion, failu
 All eighty-five tests pass in Release. Completed and pending dispatch each allocate zero bytes over
 10,000 warmed calls on the calling thread. Startup, first activation and handler-owned task and
 continuation work are outside that measurement.
+
+#### Slice 5: executable host and packaged consumers — implemented, verified and approved
+
+The existing host sample executes local and referenced command handlers, invokes both event
+handlers and displays their individual results, then resolves the request handler and obtains its
+typed response. The host owns one validated DI scope for this local demonstration. RequestExecutor
+stays internal; the sample invokes the public IRequestHandler contract directly.
+
+The package smoke check runs the same host against the TinyBus package, compares observable handler
+output and retains the existing cross-assembly diagnostics and analyzer isolation checks. Its
+single-assembly consumer also proves command invocation and scoped isolation.
+This slice changes samples and verification only. It introduces no transport or runtime contract.
+
+Verification passed: direct sample execution, Release solution build with zero warnings/errors,
+all eighty-five tests and isolated package verification. The user approved this slice and requested
+a pause until the next session. Native activation is complete; transport-boundary design comes next.
 
 #### Request/response transport design discussion — open
 

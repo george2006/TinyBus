@@ -412,3 +412,27 @@ Agree those behaviors and their slices before implementing distributed request/r
 
 Approved by the user's instruction to commit and move on. The next slice proves local execution
 in the host sample and isolated packaged consumers across assembly boundaries.
+
+Slice 4 committed as `e4b5642`.
+
+### Native activation slice 5: executable host and packaged consumers — implemented, verified and approved
+
+The existing topology host now registers and executes its local command plus referenced payment
+command and event handlers through a validated scope. It displays both individual event outcomes and
+the typed response returned by the referenced request handler. Request invocation uses the public
+handler interface directly; the internal executor stays internal.
+
+Package verification checks the host's complete output, including invocation order, one call to each
+event handler and request/response identity. The single-assembly package consumer asserts actual
+command invocation and scoped isolation. Existing diagnostics and analyzer-isolation checks remain.
+No runtime or generator changes, new abstractions, transport or persisted sample state.
+
+Verification passed: direct sample execution, Release solution build with zero warnings/errors,
+all eighty-five tests, and isolated package verification for both consumers. The packaged host
+prints both successful event outcomes and the expected payment ID/status. The negative builds
+still report TBUS003, TBUS004 and TBUS005 as expected. Approved by the user's instruction to commit
+and wait for the next session.
+
+Session handoff: stop after this slice. Native activation is complete; the next
+feature is transport-independent outbound/inbound design. Handler context, middleware and open
+request/reply semantics remain recorded design work, not authorization for implementation.

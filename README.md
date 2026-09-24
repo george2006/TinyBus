@@ -92,7 +92,7 @@ request/reply experience lets TinyBus turn the returned value into a correlated 
 requiring a reply call in the handler. Transport reply sending, reception and the caller's
 IBus.RequestAsync runtime are still future work.
 
-Run the composed topology sample:
+Run the topology and local execution sample:
 
 ```sh
 dotnet run --project samples/TinyBus.Sample.Host -- commerce.demo
@@ -101,9 +101,14 @@ dotnet run --project samples/TinyBus.Sample.Host -- commerce.demo
 The host combines its local command with the Orders and Payments handler libraries. Its five
 descriptors include both handlers for `OrderPlaced` and the response type for `GetPaymentStatus`.
 The libraries keep their handlers internal; composition uses their generated public manifests.
+The host then builds a validated DI scope, executes both commands and both event handlers, prints
+each event outcome, and resolves the request handler to obtain its typed payment-status response.
+The handlers write their invocations to the console; they do not persist payment or order state.
+All execution is local to the host process. The request example calls the handler directly because
+the request executor is internal and the transport request/reply runtime is not implemented yet.
 
 Run `tests/TinyBus.PackageTests/Verify-Package.ps1` to verify the same sample through the NuGet package,
-including cross-assembly diagnostics and compiler-only generator placement.
+including handler execution, cross-assembly diagnostics and compiler-only generator placement.
 
 The current implementation contains transport-independent contracts, generated manifests,
 compile-time topology diagnostics, scoped registrations and local handler execution.

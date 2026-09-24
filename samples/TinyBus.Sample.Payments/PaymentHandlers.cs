@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using TinyBus.Sample.Contracts;
@@ -10,6 +11,7 @@ internal sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
         CapturePayment command,
         CancellationToken cancellationToken)
     {
+        Console.WriteLine($"Payments handled CapturePayment: {command.PaymentId}");
         return ValueTask.CompletedTask;
     }
 }
@@ -20,6 +22,7 @@ internal sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
         OrderPlaced @event,
         CancellationToken cancellationToken)
     {
+        Console.WriteLine($"Payments handled OrderPlaced: {@event.OrderId}");
         return ValueTask.CompletedTask;
     }
 }

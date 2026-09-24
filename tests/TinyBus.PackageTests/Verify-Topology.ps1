@@ -74,7 +74,7 @@ function Test-TopologyOutput([string]$hostDirectory) {
     $actual | Set-Content -LiteralPath (Join-Path $RunDirectory 'topology-output.log')
     $expected = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Topology/expected-output.txt')
     if (($actual -join "`n") -cne ($expected -join "`n")) {
-        throw "Packaged topology differs from the expected identity and ordered descriptors.`n$($actual -join "`n")"
+        throw "Packaged sample differs from the expected topology and handler execution results.`n$($actual -join "`n")"
     }
 }
 

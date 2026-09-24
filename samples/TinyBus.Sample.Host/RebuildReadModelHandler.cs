@@ -9,6 +9,7 @@ internal sealed class RebuildReadModelHandler : ICommandHandler<RebuildReadModel
 {
     public ValueTask HandleAsync(RebuildReadModel command, CancellationToken cancellationToken)
     {
+        Console.WriteLine("Host handled RebuildReadModel.");
         return ValueTask.CompletedTask;
     }
 }

@@ -27,6 +27,26 @@ var generatorPath = Path.Combine(AppContext.BaseDirectory, "TinyBus.SourceGen.dl
 var generatorIsRuntimeAsset = File.Exists(generatorPath);
 Require(!generatorIsRuntimeAsset, "Generator remains a compiler asset");
 
+var options = new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true };
+using var provider = services.BuildServiceProvider(options);
+using var scope = provider.CreateScope();
+using var otherScope = provider.CreateScope();
+var executor = new CommandExecutor(scope.ServiceProvider);
+var paymentId = Guid.NewGuid();
+var payment = new Payments.CapturePayment(paymentId);
+
+await executor.ExecuteAsync(payment);
+
+var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<Payments.CapturePayment>>();
+var paymentHandler = (Payments.CapturePaymentHandler)handler;
+var otherHandler = otherScope.ServiceProvider.GetRequiredService<ICommandHandler<Payments.CapturePayment>>();
+var otherPaymentHandler = (Payments.CapturePaymentHandler)otherHandler;
+var receivedSameCommand = ReferenceEquals(payment, paymentHandler.LastCommand);
+
+Require(receivedSameCommand, "Command reaches the scoped handler unchanged");
+Require(paymentHandler.CallCount == 1, "Command executes once");
+Require(otherPaymentHandler.CallCount == 0, "Other scope remains untouched");
+
 Console.WriteLine("TinyBus package consumer passed.");
 
 static void Require(bool condition, string behavior)
@@ -43,10 +63,15 @@ namespace Payments
 
     public sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
     {
+        public CapturePayment? LastCommand { get; private set; }
+        public int CallCount { get; private set; }
+
         public ValueTask HandleAsync(
             CapturePayment command,
             CancellationToken cancellationToken)
         {
+            LastCommand = command;
+            CallCount++;
             return ValueTask.CompletedTask;
         }
     }

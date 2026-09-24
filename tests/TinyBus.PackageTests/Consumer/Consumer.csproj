@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="TinySuite.TinyBus" Version="0.1.0-dev" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
     <Compile Include="InvalidHandler.cs.template"
              Condition="'$(IncludeInvalidHandler)' == 'true'" />
   </ItemGroup>

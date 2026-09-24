@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using TinyBus.Sample.Contracts;
@@ -10,6 +11,7 @@ internal sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
         OrderPlaced @event,
         CancellationToken cancellationToken)
     {
+        Console.WriteLine($"Orders handled OrderPlaced: {@event.OrderId}");
         return ValueTask.CompletedTask;
     }
 }
