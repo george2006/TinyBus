@@ -23,51 +23,29 @@ IRequestHandler<TRequest, TResponse>
 The source generator may later emit typed invocation plumbing once the runtime has a concrete need
 for it. No runtime reflection or TinyDispatcher adapter is planned for handler execution.
 
-### TinyEvents is an optional outbox integration
+### Handler context — future work
 
-TinyBus core does not depend on TinyEvents. A separate `TinyBus.TinyEvents` package may provide a
-thin adapter that reuses the existing TinyEvents outbox implementation.
+Handlers will need a context for the current message and delivery. Candidate information includes
+message ID, correlation, causation, headers and delivery details. The context should also provide
+an injected publishing capability so a handler can publish through TinyBus's outbound path.
 
-The adapter must reuse TinyEvents behavior rather than reproduce it:
+Before implementation, agree how the context reaches handlers, its lifetime and allocation cost,
+and how publishing propagates correlation and causation. Transaction and retry behavior must be
+explicit; publishing from a handler does not itself guarantee atomicity or exactly-once delivery.
+Design this before stabilizing the handler API. Context and publishing remain future intent and
+do not change the handler signatures in the current registration slice.
 
-- transactional outbox writes
-- SQL Server and PostgreSQL providers
-- Entity Framework Core and ADO.NET integrations
-- message claiming and leases
-- worker execution
-- retries and terminal failure handling
-- cleanup
-- migrations
+### Middleware pipeline — future work
 
-The intended flow is:
+TinyBus will need middleware around handler execution. Design a smaller pipeline than
+TinyDispatcher's when there is a concrete middleware use case; the current registration slice
+introduces no pipeline API, continuation object or middleware registrations.
 
-```text
-application transaction
-        ↓
-TinyBus SendAsync / PublishAsync
-        ↓
-TinyBus.TinyEvents writes an outbound TinyBus envelope through ITinyEventPublisher
-        ↓
-existing TinyEvents outbox and worker
-        ↓
-one bridge IEventConsumer<TinyBusOutboxMessage>
-        ↓
-TinyBus outbound transport
-```
-
-TinyEvents processes one internal wrapper event. It does not dispatch the contained command or
-event to TinyBus business handlers. The wrapper preserves TinyBus semantics and contains the
-message id, contract name and version, message kind, serialized payload, correlation, causation and
-headers required by the outbound transport.
-
-The bridge acknowledges success only after the TinyBus transport accepts the message. A retry can
-therefore send the same message id again; the receiving TinyBus transport must treat message ids
-idempotently.
-
-Request/response does not naturally fit an asynchronous transactional outbox because the caller is
-waiting for a response. The first adapter slice will cover `SendAsync` and `PublishAsync`. We will
-decide explicitly whether `RequestAsync` delegates to a live transport or remains unsupported by
-the outbox path before implementation.
+Before implementation, agree ordering, short-circuiting, scope ownership, exceptions and
+cancellation, and how the pipeline surrounds event handlers and acknowledgement boundaries.
+Its relationship to handler context and its allocation cost must be explicit. Preserve direct
+typed calls and avoid delegate chains. Concrete middleware types and pipeline mechanics remain
+deferred decisions.
 
 ## Feature order
 
@@ -93,7 +71,7 @@ Planned slices:
 
 Implementation details, verification and approval history live in [`PLAN.md`](../PLAN.md).
 Multi-assembly topology and the generator refinements are approved. Native handler activation and
-invocation is the next feature to design and slice.
+invocation is the current feature; only its registration slice is implemented.
 
 Approved seam:
 
@@ -115,7 +93,7 @@ completeness and cross-assembly validation guarantees than feature-definition ag
 
 ### 2. Native handler activation and invocation
 
-Define how generated descriptors activate and invoke handlers through the host service provider.
+Define how generated code resolves and invokes handlers through the host service provider.
 TinyBus owns acknowledgement boundaries:
 
 - successful handler completion allows acknowledgement
@@ -124,12 +102,50 @@ TinyBus owns acknowledgement boundaries:
 - a command or request has exactly one local handler, already enforced by diagnostics
 - cancellation remains distinct from processing failure
 
-This feature will justify any generated delegate or invocation type it introduces. None is added
-before the runtime consumer exists.
+Handler execution must use no invocation delegates or runtime reflection. Any new invocation type
+must have a concrete runtime consumer and be discussed before implementation.
+
+Proposed slices:
+
+1. Generate command and event handler DI registrations, including referenced assemblies. Prove
+   resolution and repeated registration without adding execution behavior.
+2. Execute a typed command through the caller's scoped service provider, propagating completion,
+   failures and cancellation. Measure TinyBus dispatch allocations.
+3. Execute local event handlers; agree ordering and failure behavior before implementing this slice.
+4. Register and execute requests and return their responses.
+5. Extend the host and packaged consumer to prove execution across assembly boundaries.
+
+#### Slice 1: command and event handler registration — implemented, verified and approved
+
+Generated manifests now register bindings
+from `ICommandHandler<TCommand>` and `IEventHandler<TEvent>` to each concrete handler in its owning
+assembly. The static local entry point is `RegisterLocalHandlers(IServiceCollection services)`
+on each public assembly manifest. The root's `RegisterHandlers(IServiceCollection services)` calls
+the local and distinct referenced registration methods, preserving access to internal handlers.
+
+Follow the typed registration approach inspected in TinyDispatcher, with explicit names and
+registration that does not duplicate the same service/implementation pair when called repeatedly.
+Preserve every distinct event handler. Keep root composition explicit; no module-initializer
+registry, assembly scanning or registration delegates are needed.
+
+Approved choices: scoped handler lifetime and Microsoft.Extensions.DependencyInjection.Abstractions
+in TinyBus core. Registrations use typed service/implementation descriptors and TryAddEnumerable.
+No new runtime executor or handler context is part of this slice. Request registration remains
+with request execution in its later slice.
+
+Verify real service-provider resolution for local and referenced internal handlers, all handlers
+for a shared event, repeated registration and overlapping assembly references, the chosen lifetime,
+and an empty assembly. Existing topology diagnostics continue to gate generation.
+
+For the following command execution slice, resolve `ICommandHandler<TCommand>` and return its
+`HandleAsync` result directly. Keep messages typed and avoid an extra async wrapper. The allocation
+requirement is zero TinyBus dispatch allocations per successful command after initialization,
+verified by measurement. Record synchronous and asynchronous completion separately, identifying
+handler work, DI activation and scope costs separately. Registration allocations occur at startup.
 
 ### 3. Transport-independent outbound and inbound boundaries
 
-Design the smallest concrete transport seam required by both PostgreSQL and the TinyEvents bridge.
+Design the smallest concrete transport seam for TinyBus outbound operations and native delivery.
 The design must define:
 
 - acceptance of a `MessageEnvelope`
@@ -139,8 +155,8 @@ The design must define:
 - serialization ownership
 - correlation and causation propagation
 
-No transport interface is introduced until its PostgreSQL implementation and TinyEvents consumer
-are both understood as concrete consumers.
+No transport interface is introduced until its PostgreSQL implementation and the TinyBus runtime
+operations that consume it are understood concretely.
 
 The transport boundary must also be implementable by a second, structurally different transport.
 It cannot expose PostgreSQL concepts such as tables, rows, polling, leases, `LISTEN/NOTIFY` or
@@ -155,29 +171,7 @@ idempotency and request/response without changing the common vocabulary. If a co
 sense through rows, polling or database leases, redesign it before any provider code begins. Record
 the comparison and approval in this document before passing the checkpoint.
 
-### 4. TinyBus.TinyEvents
-
-Evaluate and implement the adapter in small slices:
-
-1. Create the package and the concrete serializable outbound wrapper.
-2. Map TinyBus command/event envelopes into `ITinyEventPublisher` without duplicating outbox logic.
-3. Add the single bridge `IEventConsumer<TinyBusOutboxMessage>` that forwards to the TinyBus
-   outbound transport.
-4. Define dependency-injection registration and prevent decoration or forwarding loops.
-5. Verify transaction participation with the real TinyEvents provider integration.
-6. Verify transport failure, worker retry, stable message ids and eventual success end to end.
-7. Verify that TinyEvents migrations, leases, retries and cleanup remain the only implementations
-   of those concerns in the adapter path.
-
-Open decisions before slice 1:
-
-- whether the adapter decorates `IBus` or exposes an explicit durable-send entry point
-- how `RequestAsync` behaves when the adapter is enabled
-- which component serializes the inner TinyBus payload
-- whether the wrapper should carry `MessageEnvelope` directly or a versioned adapter contract
-- package dependency versions and release cadence between TinyBus and TinyEvents
-
-### 5. TinyBus.PostgreSql
+### 4. TinyBus.PostgreSql
 
 PostgreSQL is the first native distributed transport, not the TinyBus runtime model. TinyBus must
 support additional transports through the same transport-independent semantics.

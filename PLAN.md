@@ -149,17 +149,12 @@ remain outside this feature and require a new design and slicing discussion befo
 ## Next feature: composed topology and distributed runtime
 
 The agreed working plan is persisted in [`docs/runtime-plan.md`](docs/runtime-plan.md). It records
-the multi-assembly composition design, native TinyBus handler execution, the PostgreSQL runtime and
-the proposed `TinyBus.TinyEvents` adapter.
+the multi-assembly composition design, native TinyBus handler execution and the PostgreSQL runtime.
 
 Architectural decision: TinyDispatcher will not execute TinyBus handlers. Its in-process dispatch
 semantics do not represent distributed command and event delivery. TinyBus will own its command,
 event and request execution semantics and generate the required invocation plumbing when that
 runtime slice begins.
-
-`TinyBus.TinyEvents` remains an optional integration package to evaluate and design before coding.
-Its purpose is to reuse the existing TinyEvents outbox implementation; TinyBus core will not depend
-on TinyEvents.
 
 Approved decision: multi-assembly composition will use generated compile-time contribution metadata
 through `BusMessageContributionAttribute`. TinyBus will not use the TinyFlags-style mutable runtime
@@ -308,6 +303,29 @@ The Release build and all fifty-one tests pass after these refactors.
 
 Slice 6 and the generator refinements were approved by the user's instruction to commit and move on.
 
-### Next feature
+### Native activation slice 1: command and event registration — implemented, verified and approved
 
-Native handler activation and invocation: discuss its behavior and slices before coding.
+Public assembly manifests expose static `RegisterLocalHandlers(IServiceCollection services)`;
+the root's static `RegisterHandlers` composes local and distinct referenced registrations.
+Commands and events use scoped service/implementation descriptors. Repeated registration preserves
+each distinct pair once, including every event handler. Internal library handlers stay registered
+inside their owning assemblies.
+
+The approved DI abstractions dependency lives in TinyBus core. Five executable tests cover scoped
+resolution, dependencies and disposal, multiple event handlers, repeated registration, overlapping
+assembly references, internal handlers, empty assemblies and deferred request registration.
+Package verification now checks that dependency and exercises generated registration.
+
+Emission follows the suite's small concrete writer pattern: `SourceWriter` owns indentation and
+line output; `ManifestEmitter` owns contributions, local metadata and root composition. Generated
+statements keep construction separate from use. Contract literal coverage includes backslashes,
+quotes, control characters and Unicode line separators.
+
+Verification: Release solution build passes with zero warnings/errors, all fifty-six tests pass,
+and isolated package verification passes its consumer, composed topology and diagnostic cases.
+Inspected the emitted Payments and Host source for readable indentation and named construction.
+Approved by the user's instruction to commit and move on.
+
+Execution follows in a separate slice. Handler context with publishing capability and a small
+middleware pipeline are recorded as future intent in
+[`docs/runtime-plan.md`](docs/runtime-plan.md); their APIs and mechanics remain deferred.

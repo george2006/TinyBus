@@ -6,13 +6,23 @@ We are two principal engineers building TinyBus together. Prefer simple, robust,
 object-oriented code. Good practices serve the product; they are not an exercise in purity.
 
 - Objects represent concrete responsibilities and keep related behavior together.
+- Group data by meaning and responsibility. Introduce a concrete model when values describe one
+  concept and are consumed together. Constructor length is a signal to investigate, not a reason
+  by itself to create another object.
 - Read top down: entry point and main behavior first, implementation details below.
+- Code should read like a book: each method tells a coherent story, with meaningful steps in a
+  natural order and details below the main flow. The reader should not have to reconstruct the
+  intent from fragments or jump between unnecessary helpers. Generated-code emitters follow the
+  same rule: use the suite's small source writer pattern for indentation and readable lines.
 - Let orchestration code breathe. An entry point should read like an index of the behavior, with
   one clearly named step per line and whitespace between phases. Move pipeline mechanics and
   implementation detail into small methods below it so a reader can understand the complete flow
   before choosing which step to inspect.
 - Keep methods small and focused on one responsibility, without fragmenting a readable flow.
 - Use intention-revealing names, braces, early returns, and whitespace between logical steps.
+- Name each distinct business check at the call site. Shared implementation can live underneath,
+  but orchestration should say `AddDuplicateCommandHandlerIssues` rather than make the reader
+  decode arguments to a generic helper.
 - Separate object construction from use: create a collaborator in a named local, then call its
   methods in a separate statement. Do not chain calls onto `new`, including inside lambdas and
   return expressions.
@@ -26,6 +36,11 @@ object-oriented code. Good practices serve the product; they are not an exercise
 - Explain constraints and decisions in comments, rather than narrating obvious code.
 - Accept small local duplication when sharing it would obscure the behavior.
 - Make failure and cancellation behavior explicit. Do not claim guarantees we have not tested.
+- Keep readability refactors focused. Preserve execution order, diagnostics, cancellation and
+  incremental behavior. Discuss changes to those separately.
+- Review the whole affected flow before handing it back. Apply agreed corrections consistently
+  across touched code. Check names, inline calls, responsibilities and unnecessary indirection as
+  well as tests. The user should not have to enforce the same rule repeatedly.
 
 ## Abstractions require discussion
 

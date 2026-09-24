@@ -50,8 +50,8 @@ try {
     }
 
     $dependencies = @($manifest.SelectNodes("//*[local-name()='dependency']"))
-    if ($dependencies.Count -ne 0) {
-        throw 'TinyBus core package must not have runtime package dependencies.'
+    if ($dependencies.Count -ne 1 -or $dependencies[0].id -ne 'Microsoft.Extensions.DependencyInjection.Abstractions') {
+        throw 'TinyBus must depend only on Microsoft.Extensions.DependencyInjection.Abstractions.'
     }
 }
 finally {

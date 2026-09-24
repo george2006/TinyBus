@@ -84,7 +84,7 @@ public sealed class ContractIdentityGenerationTests
             using System.Threading.Tasks;
             using TinyBus;
 
-            [BusContract("orders.\"placed\"\nnext")]
+            [BusContract("orders.\"placed\"\\next\0\a\b\f\n\r\t\v\u0085\u2028\u2029")]
             public sealed record OrderPlaced;
 
             public sealed class Handler : IEventHandler<OrderPlaced>
@@ -95,21 +95,24 @@ public sealed class ContractIdentityGenerationTests
             }
             """);
 
-        Assert.Equal("orders.\"placed\"\nnext|1", identity);
+        Assert.Equal("orders.\"placed\"\\next\0\a\b\f\n\r\t\v\u0085\u2028\u2029|1", identity);
     }
 
     private static string ReadIdentity(string declaration)
     {
-        return SourceGeneratorTestHost.Execute<string>(declaration + """
+        var source = declaration + """
 
             public static class Scenario
             {
                 public static string Run()
                 {
-                    var contract = new TinyBus.Generated.GeneratedTinyBusManifest().Messages[0].Contract;
+                    var manifest = new TinyBus.Generated.GeneratedTinyBusManifest();
+                    var contract = manifest.Messages[0].Contract;
                     return $"{contract.Name}|{contract.Version}";
                 }
             }
-            """);
+            """;
+
+        return SourceGeneratorTestHost.Execute<string>(source);
     }
 }

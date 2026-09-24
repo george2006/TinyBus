@@ -32,6 +32,19 @@ The topology includes local handlers and contributions from assemblies reference
 compilation. Its service identity is supplied by the application; it is not inferred from an
 assembly name. This creates metadata only and does not activate handlers or start a transport.
 
+Register the generated command and event handlers with Microsoft DI:
+
+```csharp
+var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
+```
+
+This includes local and referenced handlers, with scoped lifetimes. Repeated calls preserve each
+service/implementation pair once, including all distinct event handlers. The application supplies
+handler dependencies and owns service-provider scopes. Request registration and handler execution
+remain later slices. TinyBus references DI abstractions; building a provider requires the application's
+DI container package.
+
 Run the composed topology sample:
 
 ```sh
