@@ -87,7 +87,7 @@ Planned slices:
 4. Report duplicate command/request handlers and conflicting semantics across assemblies.
    Implemented, verified and approved.
 5. Combine the composed manifest with an explicitly supplied `ServiceIdentity` to create
-   `ServiceTopology`.
+   `ServiceTopology`. Implemented, verified and approved.
 6. Prove the behavior with a real host plus multiple handler libraries and a packaged consumer.
 
 Slice 3 implementation: the existing internal `GeneratedTinyBusManifest` composes the local public
@@ -110,6 +110,15 @@ outside these existing CLR-message rules. Twelve new test cases pass, including 
 message arrays without declaration locations. The Release build has zero warnings/errors, all
 forty-seven tests pass, and the existing package smoke test passes. Slice 4 was approved by the
 user's instruction to commit and continue with `ServiceTopology` composition.
+
+Slice 5 implementation: the generated root manifest exposes `CreateTopology(ServiceIdentity)`
+and returns the existing `ServiceTopology` containing the supplied identity and all composed
+descriptors. The application supplies identity explicitly on each call; the manifest does not infer
+or retain it. No new abstraction or identity-validation rule is added. Three executable cases
+cover local/referenced composition, a root with only references, an empty topology, internal
+request metadata and independent service identities. The Release build, all fifty tests and the
+existing package smoke test pass. Slice 5 was approved by the user's instruction to commit and
+continue; the real host and packaged multi-library scenario remain slice 6.
 
 Approved seam:
 

@@ -106,6 +106,11 @@ internal sealed class ManifestEmitter
         source.AppendLine("    {");
         source.AppendLine("        public global::System.Collections.Generic.IReadOnlyList<global::TinyBus.MessageDescriptor> Messages { get; } = ComposeMessages();");
         source.AppendLine();
+        source.AppendLine("        public global::TinyBus.ServiceTopology CreateTopology(global::TinyBus.ServiceIdentity service)");
+        source.AppendLine("        {");
+        source.AppendLine("            return new global::TinyBus.ServiceTopology(service, Messages);");
+        source.AppendLine("        }");
+        source.AppendLine();
         source.AppendLine("        private static global::System.Collections.Generic.IReadOnlyList<global::TinyBus.MessageDescriptor> ComposeMessages()");
         source.AppendLine("        {");
         source.AppendLine("            var messages = new global::System.Collections.Generic.List<global::TinyBus.MessageDescriptor>();");

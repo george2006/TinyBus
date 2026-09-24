@@ -259,7 +259,26 @@ coordinator of per-handler validation and topology validation.
 
 Approved by the user's instruction to commit and continue.
 
+Slices 3 and 4, including the validator rename, committed as `f737d76`.
+
+### Multi-assembly topology slice 5: service topology creation — implemented, verified and approved
+
+The generated root `GeneratedTinyBusManifest` now exposes
+`CreateTopology(ServiceIdentity service)`. It creates the existing `ServiceTopology` with the
+supplied identity and the complete composed message list. Identity remains an application-owned
+value: it is neither inferred from the assembly nor stored in the manifest. No factory abstraction,
+interface change, identity-validation policy or runtime activation is introduced.
+
+Three executable generator cases cover local plus referenced handlers, a root with only referenced
+handlers, and an empty topology. They also verify complete internal request metadata and two
+independent service identities created from the same manifest. The README shows the root call.
+The Release solution build passes with zero warnings and errors; all fifty tests pass, and the
+existing isolated package smoke test passes, including its expected `TBUS003` failure. Packaged
+multi-assembly topology execution remains slice 6.
+
+Approved by the user's instruction to commit and continue.
+
 ### Next slice
 
-Start multi-assembly topology slice 5: combine the composed manifest with an explicitly supplied
-`ServiceIdentity` to create `ServiceTopology`.
+Start multi-assembly topology slice 6: prove the composed topology with a real host, multiple
+handler libraries and a packaged consumer.
