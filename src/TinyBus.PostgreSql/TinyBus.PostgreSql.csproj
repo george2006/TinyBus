@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Version>0.1.0-dev</Version>
+    <PackageId>TinySuite.TinyBus.PostgreSql</PackageId>
+    <Description>PostgreSQL transport provider for TinyBus.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TinyBus/TinyBus.csproj" />
+  </ItemGroup>
+</Project>

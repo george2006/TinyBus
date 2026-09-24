@@ -351,6 +351,13 @@ explicitly deferred; registration currently supplies no outbound requirements. A
 outbound-command list in registration is rejected, including RequireCommand as a fallback. IBus sending
 is not implemented. Details are recorded in [transport-plan.md](transport-plan.md).
 
+Provider selection belongs inside the options callback through package extensions such as
+UsePostgreSql or UseRabbitMq. TinyBusOptions.Services now supports those extensions; the test provider
+proves registration of both topology capabilities and real-host startup. Production extensions are
+not implemented yet. The user requested PostgreSQL and RabbitMQ implementations developed through
+the same small slices, with real provider tests driving changes to the common contracts. Both
+provider projects are scaffolded in the solution. Each host selects one provider.
+
 PostgreSQL persists topology in shared tables; ASB materializes transport-native resources and
 ownership metadata. The common contract does not mandate shared database storage or encode physical
 destination names. The ASB representation is an adapter decision, not a prerequisite for the memory
@@ -376,16 +383,17 @@ boundary, validate its shape conceptually against at least one broker transport 
 Azure Service Bus so PostgreSQL does not accidentally become the abstraction.
 
 Mandatory checkpoint: once the first transport interfaces are drafted, stop before implementing
-`TinyBus.PostgreSql`. Map the exact same contracts against PostgreSQL and at least one broker
-transport. Review command routing, event fan-out, acknowledgement, redelivery, retry ownership,
+either provider. Map the exact same contracts against PostgreSQL and RabbitMQ.
+Review command routing, event fan-out, acknowledgement, redelivery, retry ownership,
 idempotency and request/response without changing the common vocabulary. If a contract only makes
 sense through rows, polling or database leases, redesign it before any provider code begins. Record
 the comparison and approval in this document before passing the checkpoint.
 
 ### 4. TinyBus.PostgreSql
 
-PostgreSQL is the first native distributed transport, not the TinyBus runtime model. TinyBus must
-support additional transports through the same transport-independent semantics.
+PostgreSQL and RabbitMQ are the initial provider pair. Implement each agreed slice in both so the
+same runtime semantics are exercised against database storage and a broker. The PostgreSQL-specific
+details below stay inside TinyBus.PostgreSql; RabbitMQ needs its own resource and ownership design.
 
 Within `TinyBus.PostgreSql`, durable tables are the source of truth. If `LISTEN/NOTIFY` is included,
 it is an optional low-latency wake-up optimization; polling remains the recovery path and correctness

@@ -8,6 +8,8 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/TinyBus/TinyBus.csproj" />
+    <Project Path="src/TinyBus.PostgreSql/TinyBus.PostgreSql.csproj" />
+    <Project Path="src/TinyBus.RabbitMq/TinyBus.RabbitMq.csproj" />
     <Project Path="src/TinyBus.SourceGen/TinyBus.SourceGen.csproj" />
   </Folder>
   <Folder Name="/tests/">

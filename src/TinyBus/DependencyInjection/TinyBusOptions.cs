@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace TinyBus;
 
@@ -7,6 +8,17 @@ namespace TinyBus;
 /// </summary>
 public sealed class TinyBusOptions
 {
+    internal TinyBusOptions(IServiceCollection services)
+    {
+        Services = services;
+    }
+
+    /// <summary>
+    /// Registrations available to transport provider extensions. Changes are applied to the
+    /// application collection only after TinyBus configuration succeeds.
+    /// </summary>
+    public IServiceCollection Services { get; }
+
     internal ServiceIdentity ServiceIdentity { get; private set; }
 
     public void Service(string name)

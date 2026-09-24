@@ -16,8 +16,9 @@ at `ef1180d`.
 
 Connect the existing application API to the existing handler execution through a transport.
 Start with Orders sending CapturePayment to Payments. Design its complete journey, including
-failures, before introducing interfaces. PostgreSQL is the first provider; Azure Service Bus is
-the comparison that keeps the common contract independent of database mechanics.
+failures, before introducing interfaces. The user selected PostgreSQL and RabbitMQ as the initial
+provider pair, developed through the same small slices and real integration tests. The earlier
+Azure Service Bus comparison remains a reference; its adapter is not part of this work.
 
 Use Transport as the name. Successful SendAsync means confirmed durable transport acceptance,
 not handler completion. This is the agreed direction; retries, identity and delivery ownership
@@ -451,6 +452,43 @@ fallback: it duplicates knowledge at call sites and can drift. Any future explic
 unresolved usage should live near the usage or helper; its contract remains undecided. The current
 registration slice is approved by the user's instruction to commit and move on.
 
+## Slice 6: provider selection through options — implemented, verified and approved
+
+The user approved provider selection through options extensions, following TinyFlags. Provider
+packages extend TinyBusOptions and register their implementations through Services. A provider
+supplies ITopologyReconciler and ICommandRouteSource; core need not know its concrete types or
+require both responsibilities to share a class. Missing capabilities still fail host startup.
+
+Options operate on a copy of existing service descriptors so provider TryAdd defaults respect
+application overrides. Successful configuration publishes those registrations back to the caller's
+collection; callback or validation failures leave its descriptors unchanged. No provider is activated
+during registration. DI creates providers when the worker resolves them.
+
+The test-only extension uses the existing topology accumulator. Real-host tests exercise reconciliation,
+route reads, pending startup and missing capabilities; registration tests cover overrides and failure
+without partial changes. All 135 Release tests pass. Provider projects TinyBus.PostgreSql and
+TinyBus.RabbitMq are present in the solution as requested, with no transport implementation yet.
+The user approved the registration hook and project scaffolding by requesting a commit and continuation.
+
+## Paired provider topology proof — next design discussion
+
+The first paired slice should implement registration, additive topology reconciliation and route
+loading against real PostgreSQL and RabbitMQ instances. Apply the same behavioral checks to each:
+same-service replica idempotency, conflicting owners including concurrent claims, preservation of
+newer declarations after older-replica reconciliation, filtered route reads and persistent facts
+after recreating the provider. Each application host selects one provider.
+
+Before implementation, agree ownership representation and discovery in each adapter. RabbitMQ
+direct exchanges route a matching key to one or more queues, so bindings alone do not enforce
+TinyBus's unique command-owner invariant. This is a design inference from
+[RabbitMQ exchange routing](https://www.rabbitmq.com/docs/exchanges).
+The RabbitMQ adapter must remain usable without PostgreSQL. PostgreSQL transactions and RabbitMQ
+management/resources stay private to their respective adapters. Partial reconciliation failure
+must be specified honestly; the sequential accumulator's guarantees are not distributed guarantees.
+
+Provider selection hooks are ready, but UsePostgreSql/UseRabbitMq and their configuration contracts
+await real provider implementation. The first paired slice's design must pass the common-seam review.
+
 ## Later work — intent only
 
 After reviewing this proof, agree the next small slice. Production topology reconciliation and
@@ -458,9 +496,9 @@ snapshot loading, command preparation/serialization, receive execution and trans
 remain separate work. Request ownership is not part of this command/event proof. Event subscriber
 facts identify services; per-handler durable outcomes and retry selection remain future design.
 
-Preserve the mandatory PostgreSQL/ASB comparison before approving production transport contracts.
+Preserve the mandatory PostgreSQL/RabbitMQ comparison before approving production transport contracts.
 Only real provider tests can establish durable acceptance, concurrent ownership and restart recovery.
-No PostgreSQL/ASB implementation or schema is authorized by this in-memory slice.
+Project scaffolding and registration hooks do not authorize an unreviewed provider schema or behavior.
 
 ## Provider comparison — preliminary, not approval of an interface
 

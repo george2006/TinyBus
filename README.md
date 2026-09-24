@@ -40,6 +40,9 @@ and owns service-provider scopes.
 
 Host startup requires implementations of ITopologyReconciler and ICommandRouteSource in DI. Missing
 providers or failed initialization prevent startup. There is no default production provider yet.
+Transport packages can extend TinyBusOptions and register both interfaces through its Services
+collection. The planned selection methods are UsePostgreSql and UseRabbitMq. Their projects are
+scaffolded; the provider implementations and those methods are not available yet.
 Outbound requirements will be inferred from IBus usage in a later generator slice; this registration
 slice currently supplies no outbound requirements and does not implement IBus sending.
 TinyBus references DI and Hosting abstractions; applications supply their DI container and host.

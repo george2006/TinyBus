@@ -160,14 +160,15 @@ Approved decision: multi-assembly composition will use generated compile-time co
 through `BusMessageContributionAttribute`. TinyBus will not use the TinyFlags-style mutable runtime
 registry because topology completeness and cross-assembly conflicts must be known at compilation.
 
-Transport boundary decision: PostgreSQL is the first implementation, not the core abstraction.
+Transport boundary decision: develop PostgreSQL and RabbitMQ through the same small slices to test
+the common abstractions against two different providers. Each host selects one provider.
 PostgreSQL schema, locks, leases, polling and any optional `LISTEN/NOTIFY` wake-up remain private to
 `TinyBus.PostgreSql`. Correctness cannot depend on notifications, and the first version may omit
 them until measurements justify the optimization. The common seam must also fit a broker-based
 transport before it is stabilized.
 
 Mandatory checkpoint: after drafting the common transport interfaces and before starting the first
-PostgreSQL slice, compare those interfaces against PostgreSQL and at least one broker transport.
+provider slice, compare those interfaces against PostgreSQL and RabbitMQ.
 Provider implementation cannot begin until the seam passes that review and the decision is recorded.
 
 ### Multi-assembly topology slice 1: portable contributions — implemented, verified and approved
@@ -607,6 +608,48 @@ gating, both missing providers, invalid service configuration, repeated registra
 handlers and a root with referenced internal handlers. All 131 Release tests pass (ten new cases).
 The full solution builds with zero warnings/errors, and package verification passes both consumers
 and expected diagnostics. Approved by the user's instruction to commit and move on.
+
+Topology slice 5 committed as `6d7478c`.
+
+### Topology slice 6: provider selection through options — implemented, verified and approved
+
+The user approved provider selection through options extensions, such as bus.UsePostgreSql(...).
+Following TinyFlags, TinyBusOptions exposes Services so a provider package can register its own
+ITopologyReconciler and ICommandRouteSource implementations. Core has no provider-specific switch
+and does not require both capabilities to be implemented by the same class.
+
+Configuration uses a copy of the existing service descriptors. Provider defaults can therefore
+respect existing registrations through TryAdd. The completed registrations are applied only after
+configuration succeeds; a callback failure or invalid service identity leaves the original collection
+unchanged. This protects registration state, not arbitrary side effects inside a callback.
+
+The test transport extension registers the existing real topology accumulator through DI. A real
+host proves that the selected provider reconciles its command and exposes ownership through the
+route-source interface. Tests also cover delayed startup, existing overrides and failed configuration.
+All 135 Release tests pass. The full solution build and package verification pass, including both
+packaged consumers and expected diagnostic failures. Production UsePostgreSql/UseRabbitMq extensions
+still need their adapters. Approved by the user's instruction to commit and move on.
+
+### Provider project bootstrap — implemented, verified and approved
+
+The user requested TinyBus.PostgreSql and TinyBus.RabbitMq projects in the solution. Both target
+net8.0, reference TinyBus, and have matching TinySuite package identities. They contain no placeholder
+classes, database migrations, client dependencies or provider behavior. Both build with the solution,
+with zero warnings/errors. Approved together with provider registration. Project creation does not
+resolve the provider-seam review below.
+
+### Next: paired provider topology proof — design pending
+
+Take one agreed behavior through PostgreSQL and RabbitMQ before adding the next. Start with provider
+registration, additive topology reconciliation and command-route loading. Exercise the same invariants
+against real infrastructure: replicas are idempotent, different command owners are rejected, older
+replicas preserve newer declarations, and requested routing facts survive provider recreation.
+
+Before implementation, agree each provider's ownership and route-discovery representation, including
+concurrent claims. RabbitMQ bindings alone do not establish unique command ownership. Keep PostgreSQL
+rows and RabbitMQ resources private to their adapters; RabbitMQ must not require PostgreSQL to operate.
+Do not expand this proof into send/receive, retries or an outbox yet. The shared contract review and
+approval remain required before implementing either provider.
 
 ### Later: outbound requirements from IBus usage — deferred
 

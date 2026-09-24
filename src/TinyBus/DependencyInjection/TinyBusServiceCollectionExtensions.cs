@@ -20,7 +20,8 @@ public static class TinyBusServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configure);
         ValidateSingleRuntime(services);
 
-        var options = new TinyBusOptions();
+        var registrations = CopyRegistrations(services);
+        var options = new TinyBusOptions(registrations);
         configure(options);
         options.Validate();
 
@@ -30,11 +31,33 @@ public static class TinyBusServiceCollectionExtensions
         var requiredCommands = Array.Empty<ContractIdentity>();
         var cache = new CommandRouteCache();
 
-        services.AddSingleton(topology);
-        services.AddSingleton(cache);
-        RegisterTopologyWorker(services, topology, requiredCommands, cache);
+        registrations.AddSingleton(topology);
+        registrations.AddSingleton(cache);
+        RegisterTopologyWorker(registrations, topology, requiredCommands, cache);
+
+        ApplyRegistrations(services, registrations);
 
         return services;
+    }
+
+    private static IServiceCollection CopyRegistrations(IServiceCollection services)
+    {
+        IServiceCollection registrations = new ServiceCollection();
+        foreach (var registration in services)
+        {
+            registrations.Add(registration);
+        }
+
+        return registrations;
+    }
+
+    private static void ApplyRegistrations(IServiceCollection services, IServiceCollection registrations)
+    {
+        services.Clear();
+        foreach (var registration in registrations)
+        {
+            services.Add(registration);
+        }
     }
 
     private static void RegisterTopologyWorker(
