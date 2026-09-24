@@ -23,7 +23,7 @@ internal static class MessageDiagnostics
     public static readonly DiagnosticDescriptor DuplicateCommandHandler = new(
         "TBUS003",
         "Command has multiple handlers",
-        "Command '{0}' may have only one handler in a service",
+        "Command '{0}' may have only one handler in a service{1}",
         "TinyBus",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -31,7 +31,7 @@ internal static class MessageDiagnostics
     public static readonly DiagnosticDescriptor DuplicateRequestHandler = new(
         "TBUS004",
         "Request has multiple handlers",
-        "Request '{0}' may have only one handler in a service",
+        "Request '{0}' may have only one handler in a service{1}",
         "TinyBus",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -39,7 +39,7 @@ internal static class MessageDiagnostics
     public static readonly DiagnosticDescriptor ConflictingMessageSemantics = new(
         "TBUS005",
         "Message has conflicting semantics",
-        "Message '{0}' cannot be handled as more than one of command, event, or request in a service",
+        "Message '{0}' cannot be handled as more than one of command, event, or request in a service{1}",
         "TinyBus",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

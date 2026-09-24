@@ -67,6 +67,19 @@ internal sealed class ManifestEmitter
     {
         source.AppendLine("namespace TinyBus.Generated");
         source.AppendLine("{");
+
+        WriteLocalManifest(source, plan, cancellationToken);
+        source.AppendLine();
+        WriteComposedManifest(source, plan, cancellationToken);
+
+        source.AppendLine("}");
+    }
+
+    private static void WriteLocalManifest(
+        StringBuilder source,
+        ManifestPlan plan,
+        CancellationToken cancellationToken)
+    {
         source.Append("    public sealed class ").Append(plan.ManifestTypeName)
             .AppendLine(" : global::TinyBus.IBusManifest");
         source.AppendLine("    {");
@@ -82,15 +95,33 @@ internal sealed class ManifestEmitter
 
         source.AppendLine("            });");
         source.AppendLine("    }");
-        source.AppendLine();
+    }
+
+    private static void WriteComposedManifest(
+        StringBuilder source,
+        ManifestPlan plan,
+        CancellationToken cancellationToken)
+    {
         source.AppendLine("    internal sealed class GeneratedTinyBusManifest : global::TinyBus.IBusManifest");
         source.AppendLine("    {");
-        source.Append("        private readonly ").Append(plan.ManifestTypeName).Append(" manifest = new ")
-            .Append(plan.ManifestTypeName).AppendLine("();");
+        source.AppendLine("        public global::System.Collections.Generic.IReadOnlyList<global::TinyBus.MessageDescriptor> Messages { get; } = ComposeMessages();");
         source.AppendLine();
-        source.AppendLine("        public global::System.Collections.Generic.IReadOnlyList<global::TinyBus.MessageDescriptor> Messages => manifest.Messages;");
+        source.AppendLine("        private static global::System.Collections.Generic.IReadOnlyList<global::TinyBus.MessageDescriptor> ComposeMessages()");
+        source.AppendLine("        {");
+        source.AppendLine("            var messages = new global::System.Collections.Generic.List<global::TinyBus.MessageDescriptor>();");
+        source.Append("            messages.AddRange(new ").Append(plan.ManifestTypeName).AppendLine("().Messages);");
+
+        // Referenced manifests expose their own descriptors, including assembly-internal types.
+        foreach (var manifestTypeName in plan.ReferencedManifestTypeNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            source.Append("            messages.AddRange(new ").Append(manifestTypeName).AppendLine("().Messages);");
+        }
+
+        source.AppendLine();
+        source.AppendLine("            return messages.AsReadOnly();");
+        source.AppendLine("        }");
         source.AppendLine("    }");
-        source.AppendLine("}");
     }
 
     private static void WriteMessage(StringBuilder source, MessageHandlerDefinition message)

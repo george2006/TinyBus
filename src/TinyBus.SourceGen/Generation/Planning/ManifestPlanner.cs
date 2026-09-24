@@ -13,18 +13,37 @@ internal sealed class ManifestPlanner
     public ManifestPlan Create(
         string assemblyName,
         ImmutableArray<MessageHandlerDefinition> definitions,
+        ImmutableArray<ReferencedMessageContribution> contributions,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var messages = definitions
+        var messages = OrderMessages(definitions);
+        var referencedManifests = SelectReferencedManifests(contributions);
+
+        return new ManifestPlan(CreateManifestTypeName(assemblyName), messages, referencedManifests);
+    }
+
+    private static ImmutableArray<MessageHandlerDefinition> OrderMessages(
+        ImmutableArray<MessageHandlerDefinition> definitions)
+    {
+        return definitions
             .OrderBy(definition => definition.ContractName, StringComparer.Ordinal)
             .ThenBy(definition => definition.ContractVersion)
             .ThenBy(definition => definition.Kind)
             .ThenBy(definition => definition.HandlerTypeName, StringComparer.Ordinal)
             .ToImmutableArray();
+    }
 
-        return new ManifestPlan(CreateManifestTypeName(assemblyName), messages);
+    private static ImmutableArray<string> SelectReferencedManifests(
+        ImmutableArray<ReferencedMessageContribution> contributions)
+    {
+        return contributions
+            .OrderBy(contribution => contribution.AssemblyName, StringComparer.Ordinal)
+            .ThenBy(contribution => contribution.ManifestTypeName, StringComparer.Ordinal)
+            .Select(contribution => contribution.ManifestTypeName)
+            .Distinct(StringComparer.Ordinal)
+            .ToImmutableArray();
     }
 
     private static string CreateManifestTypeName(string assemblyName)

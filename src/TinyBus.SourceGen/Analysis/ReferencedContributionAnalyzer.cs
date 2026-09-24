@@ -111,6 +111,7 @@ internal sealed class ReferencedContributionAnalyzer
             contractName!,
             contractVersion.GetValueOrDefault(),
             Display(message!),
+            HandlerAnalyzer.ReadMessageTypeIdentity(message!),
             Display(handler!),
             kind.GetValueOrDefault(),
             ReadResponseType(arguments));

@@ -125,12 +125,36 @@ internal sealed class HandlerAnalyzer
             contractName,
             contractVersion,
             message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            ReadMessageTypeIdentity(message),
             handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             kind,
             response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             SourceLocationReader.Read(compilation, handler.Locations[0]),
-            ReadContractNameLocation(compilation, message, contractAttribute),
-            ReadContractVersionLocation(compilation, message, contractAttribute));
+            ReadContractNameLocation(compilation, message, contractAttribute, handler.Locations[0]),
+            ReadContractVersionLocation(compilation, message, contractAttribute, handler.Locations[0]));
+    }
+
+    internal static string ReadMessageTypeIdentity(ITypeSymbol message)
+    {
+        if (message is IArrayTypeSymbol array)
+        {
+            return $"array:{array.Rank}:{ReadMessageTypeIdentity(array.ElementType)}";
+        }
+
+        var definition = message.OriginalDefinition;
+        var identity = $"{definition.ContainingAssembly?.Identity}:{definition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}";
+        if (message is not INamedTypeSymbol named)
+        {
+            return identity;
+        }
+
+        // Closed generic arguments and enclosing types can come from different assemblies.
+        var arguments = string.Join(";", named.TypeArguments.Select(ReadMessageTypeIdentity));
+        var containingType = named.ContainingType is null
+            ? string.Empty
+            : ReadMessageTypeIdentity(named.ContainingType);
+
+        return $"{identity}[{containingType}][{arguments}]";
     }
 
     private static AttributeData? FindContractAttribute(
@@ -176,12 +200,15 @@ internal sealed class HandlerAnalyzer
     private static SourceLocation ReadContractNameLocation(
         Compilation compilation,
         ITypeSymbol message,
-        AttributeData? contractAttribute)
+        AttributeData? contractAttribute,
+        Location handlerLocation)
     {
         var syntax = ReadAttributeSyntax(contractAttribute);
         var argument = syntax?.ArgumentList?.Arguments.FirstOrDefault(candidate =>
             candidate.NameEquals is null);
-        var location = argument?.Expression.GetLocation() ?? message.Locations[0];
+        var location = argument?.Expression.GetLocation()
+            ?? message.Locations.FirstOrDefault(candidate => candidate.IsInSource)
+            ?? handlerLocation;
 
         return SourceLocationReader.Read(compilation, location);
     }
@@ -189,12 +216,15 @@ internal sealed class HandlerAnalyzer
     private static SourceLocation ReadContractVersionLocation(
         Compilation compilation,
         ITypeSymbol message,
-        AttributeData? contractAttribute)
+        AttributeData? contractAttribute,
+        Location handlerLocation)
     {
         var syntax = ReadAttributeSyntax(contractAttribute);
         var argument = syntax?.ArgumentList?.Arguments.FirstOrDefault(candidate =>
             candidate.NameEquals?.Name.Identifier.ValueText == ContractVersionPropertyName);
-        var location = argument?.Expression.GetLocation() ?? message.Locations[0];
+        var location = argument?.Expression.GetLocation()
+            ?? message.Locations.FirstOrDefault(candidate => candidate.IsInSource)
+            ?? handlerLocation;
 
         return SourceLocationReader.Read(compilation, location);
     }

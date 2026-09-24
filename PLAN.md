@@ -205,10 +205,61 @@ emitted binaries from a root compilation and verify complete request metadata, t
 boundary and deterministic ordering across assemblies. Root composition and cross-assembly
 diagnostics remain later slices. The complete solution passes thirty-one tests with no warnings.
 
-### Next session
+### Multi-assembly topology slice 3: composed root manifest — implemented, verified and approved
 
-Start with multi-assembly topology slice 3: generate one deterministic composed manifest in the
-root assembly. Compose the local manifest with the distinct public manifests identified by the
-referenced contributions. Use contribution metadata for compile-time reasoning while avoiding
-direct generated references to potentially internal handler types. Keep cross-assembly conflict
-diagnostics in slice 4.
+Connect referenced contribution analysis to generation. The existing internal
+`GeneratedTinyBusManifest` now composes the local public manifest and each distinct referenced
+public manifest identified by `BusMessageContributionAttribute.ManifestType`. Composition keeps
+local messages first, followed by referenced manifests in ordinal assembly/type-name order; each
+manifest retains its deterministic local message order.
+
+Public assembly manifests and emitted contribution attributes remain local to their owning
+assembly. This prevents duplicate inclusion when a root references both a library and that
+library's dependency. Composition uses only the references available to the root compilation;
+it performs no runtime assembly scanning and emits no direct references to foreign handler,
+message or response types.
+
+Four executable tests compile real producer binaries and cover local plus multiple referenced
+manifests, internal types and complete request metadata, an empty root and empty library,
+determinism under reference/source reordering, and shared event handlers across libraries with
+overlapping dependencies. The Release solution build passes with zero warnings and errors; all
+thirty-five tests pass. The existing isolated package smoke test also passes, including the
+expected `TBUS003` diagnostic. Packaged multi-assembly host coverage remains slice 6.
+
+Approved by the user's instruction to continue to the next slice.
+
+### Multi-assembly topology slice 4: cross-assembly diagnostics — implemented, verified and approved
+
+Extend `TopologyValidator` with referenced contribution metadata. `TBUS003`, `TBUS004` and
+`TBUS005` now reject duplicate command/request handlers and conflicting message semantics across
+local and referenced assemblies. Local participants retain source diagnostics; each conflict
+involving references also produces a compilation-level diagnostic listing the participating
+assemblies and handlers in stable order. Overlapping local and cross-assembly checks do not repeat
+the same source diagnostic. Multiple event handlers remain valid, and generation retains every
+descriptor rather than silently choosing a handler.
+
+Analysis now records a plain CLR type identity including assembly identity, generic arguments and
+array element identity. This distinguishes homonymous messages in different assemblies, while
+handler identity includes its owning assembly so homonymous handlers are not collapsed. Roslyn
+symbols remain confined to analysis. These rules preserve CLR-message semantics; collisions of
+contract names/versions assigned to distinct CLR types are not validated by this slice.
+
+Twelve new diagnostic/executable cases cover conflicts between libraries and local/reference
+conflicts, source locations and assembly details, stable ordering across multiple conflicts,
+overlapping diagnostics, shared events, and homonymous message/handler types. An array case
+uncovered an existing assumption that every message has a declaration location; analysis now
+falls back to the local handler when the message has no source location.
+
+The Release solution build passes with zero warnings and errors, all forty-seven tests pass, and
+the existing isolated package smoke test passes, including its expected `TBUS003` failure.
+
+Review refinement: renamed `ManifestValidator` to `TopologyValidator` and the generator step to
+`ValidateTopology` to name the relationship checks explicitly. The generator remains the
+coordinator of per-handler validation and topology validation.
+
+Approved by the user's instruction to commit and continue.
+
+### Next slice
+
+Start multi-assembly topology slice 5: combine the composed manifest with an explicitly supplied
+`ServiceIdentity` to create `ServiceTopology`.

@@ -9,6 +9,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
         string? contractName,
         int contractVersion,
         string messageTypeName,
+        string messageTypeIdentity,
         string handlerTypeName,
         MessageHandlerKind kind,
         string? responseTypeName,
@@ -20,6 +21,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
         ContractName = contractName;
         ContractVersion = contractVersion;
         MessageTypeName = messageTypeName;
+        MessageTypeIdentity = messageTypeIdentity;
         HandlerTypeName = handlerTypeName;
         Kind = kind;
         ResponseTypeName = responseTypeName;
@@ -35,6 +37,8 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
     public int ContractVersion { get; }
 
     public string MessageTypeName { get; }
+
+    public string MessageTypeIdentity { get; }
 
     public string HandlerTypeName { get; }
 
@@ -55,6 +59,7 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
             && ContractName == other.ContractName
             && ContractVersion == other.ContractVersion
             && MessageTypeName == other.MessageTypeName
+            && MessageTypeIdentity == other.MessageTypeIdentity
             && HandlerTypeName == other.HandlerTypeName
             && Kind == other.Kind
             && ResponseTypeName == other.ResponseTypeName
@@ -73,6 +78,6 @@ internal sealed class MessageHandlerAnalysis : IEquatable<MessageHandlerAnalysis
         var contractHash = (MessageDisplayName, ContractName, ContractVersion).GetHashCode();
         var typeHash = (MessageTypeName, HandlerTypeName, Kind, ResponseTypeName).GetHashCode();
         var locationHash = (HandlerLocation, ContractNameLocation, ContractVersionLocation).GetHashCode();
-        return (contractHash, typeHash, locationHash).GetHashCode();
+        return (contractHash, typeHash, locationHash, MessageTypeIdentity).GetHashCode();
     }
 }

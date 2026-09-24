@@ -82,11 +82,34 @@ Planned slices:
    assembly. Implemented, verified and approved.
 2. Read referenced contributions inside source-generator analysis and convert all Roslyn symbols
    to TinyBus-owned models at that boundary. Implemented, verified and approved.
-3. Generate one deterministic composed manifest in the root assembly.
+3. Generate one deterministic composed manifest in the root assembly. Implemented, verified and
+   approved.
 4. Report duplicate command/request handlers and conflicting semantics across assemblies.
+   Implemented, verified and approved.
 5. Combine the composed manifest with an explicitly supplied `ServiceIdentity` to create
    `ServiceTopology`.
 6. Prove the behavior with a real host plus multiple handler libraries and a packaged consumer.
+
+Slice 3 implementation: the existing internal `GeneratedTinyBusManifest` composes the local public
+manifest with the distinct public manifests identified by referenced contribution attributes.
+Local messages come first; referenced manifests follow in ordinal assembly/type-name order.
+Public manifests and contribution attributes remain assembly-local, so overlapping library
+dependencies do not duplicate messages. Only references available to the root compilation
+participate; composition neither scans assemblies at runtime nor names foreign internal types.
+Four executable multi-assembly tests cover composition, internal request metadata, empty roots,
+stable ordering and shared event handlers. The Release build, all thirty-five solution tests and
+the existing package smoke test pass. Approved by the user's instruction to continue.
+
+Slice 4 implementation: the existing topology diagnostics now include referenced contributions.
+Local handlers receive source diagnostics; conflicts involving referenced handlers also produce
+a compilation-level diagnostic naming participating assemblies and handlers. Ordering is stable
+and overlapping checks do not duplicate source diagnostics. CLR message identity includes its
+assembly and constructed type arguments/elements; handler identity includes its owning assembly.
+Multiple event handlers remain valid. Contract-identity collisions between distinct CLR types are
+outside these existing CLR-message rules. Twelve new test cases pass, including a regression for
+message arrays without declaration locations. The Release build has zero warnings/errors, all
+forty-seven tests pass, and the existing package smoke test passes. Slice 4 was approved by the
+user's instruction to commit and continue with `ServiceTopology` composition.
 
 Approved seam:
 

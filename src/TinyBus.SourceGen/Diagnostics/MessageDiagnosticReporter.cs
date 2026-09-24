@@ -11,13 +11,25 @@ internal static class MessageDiagnosticReporter
     public static Diagnostic Create(Compilation compilation, MessageIssue issue)
     {
         var descriptor = ReadDescriptor(issue.Kind);
-        var tree = compilation.SyntaxTrees.ElementAt(issue.Location.TreeIndex);
-        var span = new TextSpan(issue.Location.Start, issue.Location.Length);
+        var location = ReadLocation(compilation, issue.Location);
 
         return Diagnostic.Create(
             descriptor,
-            Location.Create(tree, span),
-            issue.MessageDisplayName);
+            location,
+            issue.MessageDisplayName,
+            issue.HandlerDetails);
+    }
+
+    private static Location ReadLocation(Compilation compilation, SourceLocation? location)
+    {
+        if (location is null)
+        {
+            return Location.None;
+        }
+
+        var tree = compilation.SyntaxTrees.ElementAt(location.TreeIndex);
+        var span = new TextSpan(location.Start, location.Length);
+        return Location.Create(tree, span);
     }
 
     private static DiagnosticDescriptor ReadDescriptor(MessageIssueKind kind)

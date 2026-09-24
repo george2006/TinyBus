@@ -33,6 +33,13 @@ internal static class SourceGeneratorTestHost
         params string[] sources)
     {
         var compilation = CreateCompilation(assemblyName, sources);
+        return Run(compilation, assertCompilationSucceeds);
+    }
+
+    public static GeneratorDriverRunResult Run(
+        CSharpCompilation compilation,
+        bool assertCompilationSucceeds = true)
+    {
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new TinyBusSourceGenerator().AsSourceGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
@@ -50,19 +57,22 @@ internal static class SourceGeneratorTestHost
     public static T Execute<T>(params string[] sources)
     {
         var compilation = CreateCompilation(DefaultAssemblyName, sources);
-        var driver = CSharpGeneratorDriver.Create(new TinyBusSourceGenerator().AsSourceGenerator());
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
-        AssertCompiles(output);
+        return Execute<T>(compilation);
+    }
 
-        using var stream = new MemoryStream();
-        var emitted = output.Emit(stream);
-        Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
-
+    public static T Execute<T>(CSharpCompilation compilation, params byte[][] referencedAssemblies)
+    {
+        using var stream = new MemoryStream(CompileImage(compilation));
         var loadContext = new AssemblyLoadContext("TinyBusConsumer", isCollectible: true);
         try
         {
             loadContext.LoadFromAssemblyPath(typeof(IBusManifest).Assembly.Location);
-            stream.Position = 0;
+            foreach (var referencedAssembly in referencedAssemblies)
+            {
+                using var referenceStream = new MemoryStream(referencedAssembly);
+                loadContext.LoadFromStream(referenceStream);
+            }
+
             var assembly = loadContext.LoadFromStream(stream);
             var run = assembly.GetType("Scenario")!.GetMethod("Run")!;
             return Assert.IsType<T>(run.Invoke(null, null));
@@ -78,6 +88,11 @@ internal static class SourceGeneratorTestHost
         params string[] sources)
     {
         var compilation = CreateCompilation(assemblyName, sources);
+        return MetadataReference.CreateFromImage(CompileImage(compilation));
+    }
+
+    public static byte[] CompileImage(CSharpCompilation compilation)
+    {
         var driver = CSharpGeneratorDriver.Create(new TinyBusSourceGenerator().AsSourceGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
         AssertCompiles(output);
@@ -86,7 +101,7 @@ internal static class SourceGeneratorTestHost
         var emitted = output.Emit(stream);
         Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
 
-        return MetadataReference.CreateFromImage(stream.ToArray());
+        return stream.ToArray();
     }
 
     public static CSharpCompilation CreateCompilationWithReferences(

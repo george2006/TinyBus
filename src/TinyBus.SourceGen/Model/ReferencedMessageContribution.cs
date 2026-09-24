@@ -10,6 +10,7 @@ internal sealed class ReferencedMessageContribution : IEquatable<ReferencedMessa
         string contractName,
         int contractVersion,
         string messageTypeName,
+        string messageTypeIdentity,
         string handlerTypeName,
         MessageHandlerKind kind,
         string? responseTypeName)
@@ -19,6 +20,7 @@ internal sealed class ReferencedMessageContribution : IEquatable<ReferencedMessa
         ContractName = contractName;
         ContractVersion = contractVersion;
         MessageTypeName = messageTypeName;
+        MessageTypeIdentity = messageTypeIdentity;
         HandlerTypeName = handlerTypeName;
         Kind = kind;
         ResponseTypeName = responseTypeName;
@@ -34,6 +36,8 @@ internal sealed class ReferencedMessageContribution : IEquatable<ReferencedMessa
 
     public string MessageTypeName { get; }
 
+    public string MessageTypeIdentity { get; }
+
     public string HandlerTypeName { get; }
 
     public MessageHandlerKind Kind { get; }
@@ -48,6 +52,7 @@ internal sealed class ReferencedMessageContribution : IEquatable<ReferencedMessa
             && ContractName == other.ContractName
             && ContractVersion == other.ContractVersion
             && MessageTypeName == other.MessageTypeName
+            && MessageTypeIdentity == other.MessageTypeIdentity
             && HandlerTypeName == other.HandlerTypeName
             && Kind == other.Kind
             && ResponseTypeName == other.ResponseTypeName;
@@ -64,6 +69,6 @@ internal sealed class ReferencedMessageContribution : IEquatable<ReferencedMessa
         var contractHash = (ContractName, ContractVersion).GetHashCode();
         var typeHash = (MessageTypeName, HandlerTypeName, Kind, ResponseTypeName).GetHashCode();
 
-        return (originHash, contractHash, typeHash).GetHashCode();
+        return (originHash, contractHash, typeHash, MessageTypeIdentity).GetHashCode();
     }
 }
