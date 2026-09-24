@@ -54,8 +54,20 @@ await executor.ExecuteAsync(command, cancellationToken);
 
 The executor resolves the registered command handler and returns its completion directly. Keep the
 scope alive until execution completes. Failures and cancellation propagate to the caller. This is
-local handler execution; sending through a transport, event execution and request execution remain
+local handler execution; sending through a transport and request execution remain
 later slices.
+
+Execute all registered event handlers through an existing scope:
+
+```csharp
+var executor = new TinyBus.EventExecutor(scope.ServiceProvider);
+var results = await executor.ExecuteAsync(message, cancellationToken);
+```
+
+Each handler runs once, sequentially in registration order. Each EventHandlerResult records the
+HandlerType and Succeeded: true on success or false on a handler exception. Failures do not stop
+later handlers. Caller cancellation propagates. The executor performs no retries. Results are local
+to this call; durable outcome storage and retry mechanics remain future work.
 
 Run the composed topology sample:
 

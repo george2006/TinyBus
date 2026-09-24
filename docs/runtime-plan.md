@@ -98,7 +98,8 @@ TinyBus owns acknowledgement boundaries:
 
 - successful handler completion allows acknowledgement
 - handler failure reaches the delivery runtime and causes retry/failure handling
-- an event invokes every local event handler represented by the service topology
+- an event executor attempts every registered handler once and reports each handler's success;
+  future delivery mechanics will use individual outcomes to decide retries
 - a command or request has exactly one local handler, already enforced by diagnostics
 - cancellation remains distinct from processing failure
 
@@ -111,7 +112,7 @@ Proposed slices:
    resolution and repeated registration without adding execution behavior.
 2. Execute a typed command through the caller's scoped service provider, propagating completion,
    failures and cancellation. Measure TinyBus dispatch allocations.
-3. Execute local event handlers; agree ordering and failure behavior before implementing this slice.
+3. Execute all event handlers once and report a result record per handler. Implemented, verified and approved.
 4. Register and execute requests and return their responses.
 5. Extend the host and packaged consumer to prove execution across assembly boundaries.
 
@@ -171,6 +172,43 @@ Verification: all sixty-six tests pass in Release, including generated registrat
 internal handler. Allocation tests measure zero bytes over 10,000 warmed calls for synchronous
 completion and for returning a pending handler-owned task. They measure dispatch on the calling
 thread, excluding scope creation, initial resolution and handler-owned task/continuation work.
+
+#### Slice 3: event execution — implemented, verified and approved
+
+Approved simple contract: EventExecutor(IServiceProvider services) exposes:
+
+```csharp
+ValueTask<IReadOnlyList<EventHandlerResult>> ExecuteAsync<TEvent>(
+    TEvent message,
+    CancellationToken cancellationToken = default)
+```
+
+It resolves all IEventHandler<TEvent> registrations from the caller's scope and invokes each once,
+sequentially in registration order. Each invocation is awaited inside its own try/catch: success
+records true, a handler exception records false, and execution continues with the next handler.
+Results are ordered EventHandlerResult records with HandlerType and Succeeded. The approved result
+type is a readonly record struct. No handlers returns an empty list. Registrations remain unkeyed
+and unchanged from slice 1.
+
+Caller cancellation propagates when a handler throws OperationCanceledException while the supplied
+token is cancelled; a handler-local cancellation is recorded as failure. The caller owns the scope
+and keeps it alive until completion. There are no retries within ExecuteAsync.
+
+Results identify handlers by CLR type for this local execution. Durable subscription identities,
+storage, retry selection/scheduling and richer failure details remain future work. Service-provider
+resolution currently occurs before the invocation loop; activation failures propagate for the whole
+call. If caller cancellation propagates, this API does not return partial results. Address those
+mechanics when designing durable delivery. Do not claim progress survives a process failure.
+
+The result list allocates per execution, and awaiting pending handlers can allocate additional
+continuation state. This slice favors the agreed simple result contract; zero allocation is not
+claimed for event execution. The warmed command-execution allocation guarantee is unchanged.
+
+Responsibility boundary: EventExecutor owns local handler invocation and collection of outcomes.
+Future delivery orchestration will own persisted progress, retries, acknowledgements and transport
+concerns. A message ID identifies the event; a consumer/subscription identity identifies its recipient.
+Design that identity as delivery metadata rather than modifying the domain payload. No durable
+consumer identity or delivery coordinator is introduced in this slice.
 
 ### 3. Transport-independent outbound and inbound boundaries
 

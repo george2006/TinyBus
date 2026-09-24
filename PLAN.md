@@ -349,3 +349,30 @@ dispatch; scope creation, first activation and handler/task allocations are outs
 
 Approved by the user's instruction to commit and move on. Event execution is the next slice;
 ordering and failure behavior require agreement before implementation.
+
+Slice 2 committed as `26d9b5f`.
+
+### Native activation slice 3: event execution — implemented, verified and approved
+
+EventExecutor resolves all scoped event handlers and attempts each once, sequentially in registration
+order. It returns an ordered list of EventHandlerResult records containing HandlerType and Succeeded:
+true for successful completion, false for a handler exception. Failures do not prevent later handlers
+from running. Caller cancellation propagates. There are no retries or keyed registrations.
+
+Nine new cases cover ordered invocation, scoped isolation, message/token forwarding, asynchronous
+sequencing, synchronous/asynchronous failures followed by successful handlers, caller cancellation,
+handler-local cancellation, empty results and generated local/internal referenced handlers.
+All seventy-five tests pass in Release. Retry decisions, durable outcome storage and isolated
+activation failures remain later mechanics. The result list allocates per execution; the approved
+readonly record struct avoids a separate heap object for each result.
+
+Final verification after the record change: Release solution build passes with zero warnings/errors,
+all seventy-five tests pass and isolated package verification passes. A warmed local measurement
+of 10,000 executions with two synchronously completing handlers allocated 1,520,000 bytes on the
+calling thread; pending completion adds continuation costs. Event execution has no zero-allocation
+claim in this slice.
+
+Approved folder refactor: public interfaces live in Abstractions; executors in Execution; envelope,
+contract identity and BusContractAttribute in Messaging; service topology and contribution metadata
+in Topology. Public namespaces remain TinyBus. All fourteen moved files retain their original contents.
+The result record and completed slice were approved by the user's instruction to commit and move on.
