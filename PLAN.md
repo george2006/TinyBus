@@ -475,3 +475,46 @@ snapshots and explicit cache reload. The rolling-deployment test preserves both 
 and a newer event subscription after an older replica reconciles. 10,000 warmed route lookups
 allocate zero bytes on the calling thread. Package verification was not rerun: packaging, public
 APIs and generator output are unchanged. Approved by the user's instruction to commit and move on.
+
+Topology slice 1 committed as `f68db83`.
+
+### Topology slice 2: startup provider boundaries — implemented, verified and approved
+
+The user approved both public provider seams. ITopologyReconciler adds or confirms one service's
+capabilities asynchronously; ICommandRouteSource loads a snapshot of requested command routes.
+CommandRoute is now public because it crosses the adapter boundary. CommandRouteCache remains
+internal and synchronous. There is no new coordinator, resolver interface or production provider.
+
+The existing test-only accumulator implements both contracts. It returns routing facts rather than
+constructing the runtime cache. A controllable availability task exercises pending completion,
+failure and cancellation without replacing the accumulated topology with mock responses.
+The existing additive, conflict, filtering and snapshot tests now use the asynchronous operations.
+Absence never means deletion. A failed or cancelled load does not become an empty successful result.
+
+All 103 tests pass in Release, including eight new cases. This verifies the in-memory contract proof,
+not distributed atomicity or durability. Production reconciliation and route-cache startup wiring
+remain later work. The user approved the slice and continuing with shared ownership validation.
+The user subsequently requested committing this slice together with the ownership-rule extraction.
+The Release solution build passes with zero warnings/errors, and isolated package verification
+passes for both consumers, including the existing cross-assembly diagnostic checks.
+
+### Topology slice 3: reusable command ownership validation — implemented, verified and approved
+
+Move the command-ownership rule from test support onto the existing CommandRoute model through
+ValidateOwner(ServiceIdentity). Same-owner claims are accepted; different owners produce the same
+deterministic error naming the contract/version and both services. No new validator class or global
+topology object is introduced.
+
+CommandRouteCache now applies that rule when building a snapshot: repeated same-owner facts collapse
+to one route, while conflicts fail before a cache is exposed. The test accumulator uses the same
+rule before registering any contribution. Its in-memory storage remains test support, and adapters
+remain responsible for atomically enforcing ownership in shared infrastructure.
+
+The user clarified the seam responsibilities: ITopologyReconciler writes my service's capabilities;
+ICommandRouteSource reads accumulated command ownership. Both interface comments reflect this.
+
+All 106 tests pass in Release. Three new cache cases cover repeated owners and conflicts in both
+input orders. Existing reconciliation, additive deployment, cancellation and allocation checks pass.
+The Release solution build has zero warnings/errors. This focused extraction changes no packaging or
+generator behavior; package verification last passed with slice 2. Approved by the user's instruction
+to commit and move on, together with the provider seams from slice 2.

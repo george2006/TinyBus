@@ -1,7 +1,10 @@
 # Transport and command runtime plan
 
 Status: the first in-memory topology slice is implemented, verified and approved.
-Production transport contracts remain proposals. Native activation is complete at `ef1180d`.
+The second slice's public reconciliation/loading seams are implemented, verified and approved.
+The third slice's reusable ownership validation is implemented, verified and approved.
+Production transport send/receive contracts remain proposals. Native activation is complete
+at `ef1180d`.
 
 ## Goal
 
@@ -17,8 +20,9 @@ still need the decisions below. A responsibility in this plan does not imply a s
 ## Existing code and missing connections
 
 We have IBus declarations, MessageEnvelope, generated local/composed topology, scoped handler
-registrations and local command/event/request execution. This slice adds an internal immutable command
-route cache and a test-only topology accumulator. Serialization, production topology reconciliation,
+registrations and local command/event/request execution. We now have an internal immutable command
+route cache, public reconciliation/loading seams and a test-only topology accumulator implementing
+those seams. Serialization, production topology reconciliation,
 transport operations, a receive worker and durable delivery state remain future work.
 
 The agreed routing direction is service-contributed topology:
@@ -178,7 +182,7 @@ Resolve these points before approving the draft:
   cancellation and active-delivery cancellation are separate concerns. Do not claim zero allocation
   for the async stream or per-delivery objects without measurements.
 
-## Current slice: in-memory topology and command routes
+## Slice 1: in-memory topology and command routes
 
 Implemented, verified and approved. This slice contains:
 
@@ -192,7 +196,7 @@ Implemented, verified and approved. This slice contains:
 The test accumulator is a sequential in-memory model, not a production reconciler, service, singleton
 or proof of distributed atomicity. It stores no manifest, CLR Type or handler instance. The local
 ServiceTopology input still describes local CLR types; those are not copied into routing facts.
-No interfaces, dependencies, generator changes, networking, background workers or storage are added.
+Slice 1 added no interfaces, dependencies, generator changes, networking, background workers or storage.
 
 The user approved this rolling-deployment invariant:
 
@@ -228,11 +232,9 @@ allocate zero bytes on the calling thread; construction/loading allocations are 
 | 9. ASB without a coordinator? | Adapter-managed resource metadata can materialize ownership and load a local snapshot during startup/refresh. Candidate mechanisms and concurrency limits are below; none is selected or implemented. |
 | 10. Semantics versus adapters? | TinyBus owns contract/service identities, unique command ownership, multiple event subscribers, additive registration and local lookup. Adapters own persistence, atomic claims, resource naming, management APIs and physical delivery mapping. |
 
-ITopologyReconciler is not added in this slice: the only accumulator is test support, and its operation
-is synchronous because it performs no I/O. Production reconciliation is expected to require async I/O.
-If independently packaged adapters implement a common reconciliation contract, a public SPI may be
-justified then; keep it an adapter extension point, not a handler-facing API. Do not settle visibility
-by creating a speculative interface now.
+Slice 1 kept reconciliation in synchronous test support. The user subsequently approved the public
+adapter seams in slice 2 below: reconciliation/loading are asynchronous provider operations, while
+the route cache remains internal and synchronous. CommandRoute becomes public at that boundary.
 
 Startup ordering has a deliberate limit: a cache loaded before an owner registers remains missing
 that route until an explicit load. There is no automatic refresh loop or network-on-miss behavior.
@@ -257,6 +259,76 @@ distributed guarantee. See [queue creation](https://learn.microsoft.com/en-us/do
 Neither option requires a central TinyBus process or a mandatory external database. Choose the ASB
 representation within that adapter; the runtime still consumes ContractIdentity to ServiceIdentity
 facts and maps the service to a physical destination inside the transport.
+
+## Slice 2: startup provider boundaries — implemented, verified and approved
+
+Concrete need: per-service startup must contribute its own topology and obtain routing facts for
+its local cache. The current test accumulator combines these operations, while independently
+packaged transport adapters will supply their production implementations.
+
+The user approved these two public adapter extension points in TinyBus/Abstractions:
+
+```csharp
+public interface ITopologyReconciler
+{
+    ValueTask ReconcileAsync(
+        ServiceTopology topology,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ICommandRouteSource
+{
+    ValueTask<IReadOnlyCollection<CommandRoute>> LoadAsync(
+        IReadOnlyCollection<ContractIdentity> requiredContracts,
+        CancellationToken cancellationToken = default);
+}
+```
+
+ITopologyReconciler writes my service's capabilities; ICommandRouteSource reads accumulated command
+ownership. ReconcileAsync adds or confirms only the supplied service's capabilities; it never removes absent
+declarations. LoadAsync reads only the requested routing facts and may perform I/O. This is startup
+or explicit reload work, never the per-send path. Missing owners are omitted so the cache retains
+its existing TryResolve(false) behavior. Loading errors and cancellation propagate rather than
+being converted to an empty successful snapshot.
+
+CommandRoute is public because it crosses the adapter boundary; CommandRouteCache stays
+internal. No ICommandRouteResolver or new coordinator class is added. ServiceTopology is local
+input to its service's adapter, not a manifest transmitted to other services. The adapter extracts
+portable facts before writing shared infrastructure.
+
+These are distinct write/read responsibilities: a sender reads foreign routing facts without
+owning those declarations. The simpler alternative is calling a concrete provider directly at
+startup; that couples startup to one adapter. The cost of these seams is two public contracts plus
+a public route record to maintain. No new package is needed.
+
+The existing test accumulator now implements both seams and returns route snapshots. Tests exercise
+pending completion, failure and cancellation through a controllable availability task, then verify
+real accumulated facts. Cancelled/failed reconciliation does not add capabilities in this test model;
+production adapters must separately define partial application under interruption. Additive retry
+must remain safe. A returned route snapshot and a constructed cache are unaffected by later additions.
+
+All 103 tests pass in Release, including eight new cases. Existing allocation checks still pass.
+The Release solution build has zero warnings/errors and isolated package verification passes.
+The tests establish behavior of the in-memory adapter; they do not prove distributed ownership,
+atomicity or durability. No production startup wiring, networking, hosted workers, PostgreSQL/ASB
+operations or automatic refresh is added. The user approved this slice and continuing with the
+reusable ownership rule below.
+
+## Slice 3: reusable command ownership validation — implemented, verified and approved
+
+CommandRoute owns ValidateOwner(ServiceIdentity): the same owner is valid, and a different owner
+produces a deterministic conflict naming both services and the contract/version. The model already
+contains the values needed by this rule, so a separate validator abstraction is unnecessary.
+
+The test accumulator calls this production rule before mutating its test storage. Cache construction
+also calls it to reject conflicting provider facts and coalesce repeated facts for the same owner.
+The synchronous lookup path is unchanged. This local validation does not replace atomic ownership
+enforcement in PostgreSQL or a broker adapter; checking then writing shared state without concurrency
+control would still race.
+
+All 106 tests pass in Release. The three additional cases exercise duplicate same-owner input and
+conflicting cache input in both orders. Existing additive reconciliation and allocation checks pass.
+Storage remains in the test project; no global in-memory topology is added to production.
 
 ## Later work — intent only
 

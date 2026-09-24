@@ -13,6 +13,12 @@ internal sealed class CommandRouteCache
 
         foreach (var route in commandRoutes)
         {
+            if (owners.TryGetValue(route.Contract, out var existingOwner))
+            {
+                route.ValidateOwner(existingOwner);
+                continue;
+            }
+
             owners.Add(route.Contract, route.Service);
         }
 

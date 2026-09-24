@@ -27,6 +27,43 @@ public sealed class CommandRouteCacheTests
     }
 
     [Fact]
+    public void Accepts_repeated_routes_to_the_same_owner()
+    {
+        var capture = new ContractIdentity("payments.capture", 1);
+        var payments = new ServiceIdentity("payments");
+        var route = new CommandRoute(capture, payments);
+        var routes = new[] { route, route };
+
+        var cache = new CommandRouteCache(routes);
+        var found = cache.TryResolve(capture, out var owner);
+
+        Assert.True(found);
+        Assert.Equal(payments, owner);
+    }
+
+    [Theory]
+    [InlineData("payments", "checkout")]
+    [InlineData("checkout", "payments")]
+    public void Rejects_conflicting_owners_before_exposing_a_route_cache(
+        string firstService,
+        string secondService)
+    {
+        var capture = new ContractIdentity("payments.capture", 1);
+        var firstOwner = new ServiceIdentity(firstService);
+        var secondOwner = new ServiceIdentity(secondService);
+        var firstRoute = new CommandRoute(capture, firstOwner);
+        var secondRoute = new CommandRoute(capture, secondOwner);
+        var routes = new[] { firstRoute, secondRoute };
+
+        var failure = Assert.Throws<InvalidOperationException>(() =>
+        {
+            var cache = new CommandRouteCache(routes);
+        });
+
+        Assert.Equal("Command 'payments.capture' version 1 has conflicting owners 'checkout' and 'payments'.", failure.Message);
+    }
+
+    [Fact]
     public void Keeps_a_snapshot_when_the_source_changes()
     {
         var capture = new ContractIdentity("payments.capture", 1);

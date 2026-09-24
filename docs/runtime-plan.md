@@ -312,7 +312,11 @@ behavior before its implementation, and retain the transport-seam review before 
 ### 3. Transport-independent outbound and inbound boundaries
 
 The current plan and in-memory topology slice live in [transport-plan.md](transport-plan.md).
-The user authorized the minimal ownership/cache proof; production transport interfaces remain drafts.
+The ownership/cache proof and public ITopologyReconciler/ICommandRouteSource seams are approved.
+ITopologyReconciler writes the calling service's capabilities; ICommandRouteSource reads accumulated
+command ownership. CommandRoute is public, while its immutable runtime cache remains internal and
+synchronous. Reusable ownership validation now lives on CommandRoute and is used by cache construction
+and the test accumulator; this extraction is approved. Production send/receive interfaces remain drafts.
 Transport remains the agreed name. Successful sending means confirmed durable transport acceptance,
 separate from handler completion. Start with a command journey and challenge gaps in routing,
 outbound contract metadata, ownership and failure behavior before introducing interfaces.

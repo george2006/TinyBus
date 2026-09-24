@@ -1,13 +1,22 @@
 namespace TinyBus.Tests;
 
 // Simulates shared transport topology for tests. It retains routing facts, never manifests.
-internal sealed class TopologyAccumulator
+internal sealed class TopologyAccumulator : ITopologyReconciler, ICommandRouteSource
 {
     private readonly Dictionary<ContractIdentity, CommandRoute> commandRoutes = new();
     private readonly Dictionary<ContractIdentity, HashSet<ServiceIdentity>> eventSubscriptions = new();
 
-    public void Reconcile(ServiceTopology topology)
+    // Tests can delay or fail access without replacing the actual reconciliation behavior.
+    public Task Availability { get; set; } = Task.CompletedTask;
+
+    public async ValueTask ReconcileAsync(
+        ServiceTopology topology,
+        CancellationToken cancellationToken = default)
     {
+        var availability = Availability.WaitAsync(cancellationToken);
+        await availability.ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
         ValidateCommandOwnership(topology);
 
         // Absence is not deletion intent: an older replica must preserve newer declarations.
@@ -15,8 +24,14 @@ internal sealed class TopologyAccumulator
         RegisterEventSubscriptions(topology);
     }
 
-    public CommandRouteCache LoadCommandRoutes(IEnumerable<ContractIdentity> requiredContracts)
+    public async ValueTask<IReadOnlyCollection<CommandRoute>> LoadAsync(
+        IReadOnlyCollection<ContractIdentity> requiredContracts,
+        CancellationToken cancellationToken = default)
     {
+        var availability = Availability.WaitAsync(cancellationToken);
+        await availability.ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
         var contracts = new HashSet<ContractIdentity>(requiredContracts);
         var routes = new List<CommandRoute>();
 
@@ -28,8 +43,7 @@ internal sealed class TopologyAccumulator
             }
         }
 
-        var cache = new CommandRouteCache(routes);
-        return cache;
+        return routes.AsReadOnly();
     }
 
     public IReadOnlyCollection<ServiceIdentity> GetEventSubscribers(ContractIdentity contract)
@@ -58,16 +72,7 @@ internal sealed class TopologyAccumulator
                 continue;
             }
 
-            if (existingRoute.Service == topology.Service)
-            {
-                continue;
-            }
-
-            var owners = new[] { existingRoute.Service.Value, topology.Service.Value };
-            Array.Sort(owners, StringComparer.Ordinal);
-            var error = $"Command '{message.Contract.Name}' version {message.Contract.Version} "
-                + $"has conflicting owners '{owners[0]}' and '{owners[1]}'.";
-            throw new InvalidOperationException(error);
+            existingRoute.ValidateOwner(topology.Service);
         }
     }
 

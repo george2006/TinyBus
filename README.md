@@ -112,5 +112,8 @@ including handler execution, cross-assembly diagnostics and compiler-only genera
 
 The current implementation contains transport-independent contracts, generated manifests,
 compile-time topology diagnostics, scoped registrations and local handler execution.
+Provider contracts expose additive service reconciliation through `ITopologyReconciler` and startup
+route loading through `ICommandRouteSource`. These exchange logical routing facts (`CommandRoute`);
+physical destinations belong to the provider. Only an in-memory test implementation exists so far.
 Transports, persistence, workers, retries and distributed
 runtime behavior are intentionally not implemented yet.
