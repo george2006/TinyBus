@@ -567,3 +567,59 @@ failure/cancellation and concurrent lookup during snapshot construction. Warmed 
 allocate zero bytes on the calling thread. Package verification passes both consumers and the
 expected diagnostic cases with the new dependency contract. Approved by the user's instruction to
 commit and move on.
+
+Topology slice 4 and the ownership responsibility correction committed as `bc33ebc`.
+
+### Topology slice 5: application registration — implemented, verified and approved
+
+The user rejected AddTinyBusTopology(topology, requiredContracts). Applications configure TinyBus
+through the following entry point:
+
+```csharp
+services.AddTinyBus(bus =>
+{
+    bus.Service("payments");
+});
+```
+
+Service identifies the logical service. The configuration callback runs during registration.
+TinyBus owns composition of generated capabilities, handler registration, route cache and topology
+worker behind this entry point. Applications should not assemble those runtime internals themselves.
+
+The generator emits an internal extension in each consuming assembly that selects its composed root
+manifest and registers its handlers. The public core AddTinyBus<TManifest> overload configures
+TinyBusOptions, validates the service identity and registers topology, cache and worker. It is the
+bridge used by generated code; applications use the non-generic generated entry point above.
+No runtime assembly scanning, module initializer or global manifest registry is introduced.
+
+One runtime is allowed per service collection. Repeated AddTinyBus calls fail before changing the
+original registration. Invalid or missing service identity also leaves registrations unchanged.
+The worker resolves the two provider seams through DI at host startup; missing implementations fail
+startup. The DI factory is used for worker activation only, not for message invocation.
+
+The user clarified the next generator direction: inbound topology comes from handler interfaces;
+outbound requirements come from IBus usage. There is no RequireCommand configuration API. This
+registration slice supplies no outbound requirements while that analysis is pending, and does not
+implement IBus sending. It must not be described as complete route readiness for outbound messages.
+
+The sample and packaged consumer use the requested AddTinyBus syntax. Tests cover real-host startup
+gating, both missing providers, invalid service configuration, repeated registration, scoped local
+handlers and a root with referenced internal handlers. All 131 Release tests pass (ten new cases).
+The full solution builds with zero warnings/errors, and package verification passes both consumers
+and expected diagnostics. Approved by the user's instruction to commit and move on.
+
+### Later: outbound requirements from IBus usage — deferred
+
+Analyze semantic IBus invocations in the generator. Command route requirements come from concrete
+SendAsync message types, using the same contract identity rules as inbound messages. Requirements
+must compose across referenced assemblies so callers in libraries contribute to the root host.
+
+Agree portable outbound metadata and the handling of generic helpers where the concrete message
+type is unavailable before implementation. Do not infer requirements by method spelling, reuse
+inbound handler descriptors for outbound usage, or silently omit unresolved requirements. Event
+publication and request/reply have different routing semantics and need to retain that distinction.
+
+The user explicitly deferred outbound discovery and rejected an outbound-command list in application
+registration. Do not add RequireCommand as its fallback. If unresolved usages eventually require an
+explicit declaration, design it near the usage or helper that owns the dependency. That shape is
+not yet agreed. Registration remains focused on configuring the service.

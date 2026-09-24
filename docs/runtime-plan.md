@@ -336,14 +336,20 @@ are the intended initial lifecycle. Lookups are synchronous and local; periodic 
 notification mechanisms remain deferred.
 
 The internal TopologyWorker : BackgroundService reconciles, loads required routes
-and replace the local immutable snapshot. It replaces the rejected TopologyInitializer proposal.
+and replaces the local immutable snapshot. It replaces the rejected TopologyInitializer proposal.
 Startup readiness is now agreed: await reconciliation, load all required command routes, validate
 and publish the immutable snapshot before TinyBus is started. Initial failure or cancellation fails
 startup; initialization must not race the first Send. TopologyWorker.StartAsync owns this sequence,
 with ExecuteAsync reserved for later background refresh. The user approved Hosting.Abstractions in
-TinyBus. Implementation and real-host tests are complete and approved; public host registration
-and production providers remain later work.
-See the next slice in [transport-plan.md](transport-plan.md).
+TinyBus. Worker implementation and real-host tests are complete and approved; production providers
+remain later work.
+The agreed application entry point is services.AddTinyBus(bus => { bus.Service("payments"); }).
+Generated topology, scoped handlers, cache and worker registration are now wired behind that API,
+and approved. The user selected IBus usage as the source of outbound requirements, alongside
+handler interfaces for inbound capabilities. Usage analysis and cross-assembly requirements are
+explicitly deferred; registration currently supplies no outbound requirements. A manually maintained
+outbound-command list in registration is rejected, including RequireCommand as a fallback. IBus sending
+is not implemented. Details are recorded in [transport-plan.md](transport-plan.md).
 
 PostgreSQL persists topology in shared tables; ASB materializes transport-native resources and
 ownership metadata. The common contract does not mandate shared database storage or encode physical

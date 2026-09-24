@@ -14,6 +14,11 @@ Require(registration.ServiceType == typeof(ICommandHandler<Payments.CapturePayme
 Require(registration.ImplementationType == typeof(Payments.CapturePaymentHandler), "Concrete handler registration");
 Require(registration.Lifetime == ServiceLifetime.Scoped, "Scoped handler lifetime");
 
+services.AddTinyBus(bus =>
+{
+    bus.Service("payments");
+});
+
 Require(messages.Count == 1, "One command descriptor");
 
 var command = messages[0];
@@ -29,6 +34,9 @@ Require(!generatorIsRuntimeAsset, "Generator remains a compiler asset");
 
 var options = new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true };
 using var provider = services.BuildServiceProvider(options);
+var topology = provider.GetRequiredService<ServiceTopology>();
+Require(topology.Service.Value == "payments", "Configured logical service");
+Require(topology.Messages.Count == 1, "Generated manifest is bound by AddTinyBus");
 using var scope = provider.CreateScope();
 using var otherScope = provider.CreateScope();
 var executor = new CommandExecutor(scope.ServiceProvider);

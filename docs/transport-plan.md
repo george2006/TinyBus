@@ -7,6 +7,8 @@ The subsequent correction keeps CommandRoute passive and moves checks to their o
 that correction is approved. The user's TopologyWorker proposal replaces the rejected initializer;
 startup readiness and Hosting.Abstractions in TinyBus are approved. The worker slice is implemented,
 verified and approved.
+Application registration is also implemented, verified and approved. Outbound usage discovery is
+explicitly deferred; registration must not require a manually maintained outbound-command list.
 Production transport send/receive contracts remain proposals. Native activation is complete
 at `ef1180d`.
 
@@ -422,6 +424,32 @@ The simpler alternative is application-owned startup code calling the two seams.
 one internal class and hosting integration, giving each host an owned lifecycle for this operation
 and future refresh. No additional coordinator or initializer was introduced. The user approved this
 slice and the ownership responsibility correction by requesting a commit and continuation.
+
+## Slice 5: application registration — implemented, verified and approved
+
+The user selected services.AddTinyBus(bus => { bus.Service("payments"); }) as the application seam,
+replacing the rejected AddTinyBusTopology proposal. Service sets the logical identity. The callback
+configures registration; generated capabilities and internal runtime wiring belong behind this API.
+
+The generated entry point chooses the calling assembly's composed manifest and scoped handler
+registrations. A public generic core overload configures TinyBusOptions and registers ServiceTopology,
+CommandRouteCache and TopologyWorker. The provider seams are resolved through DI when the host starts;
+missing providers fail startup. Repeated AddTinyBus registration is rejected before any changes.
+
+The user clarified that outbound requirements must be inferred from IBus usage, complementing
+handler-derived inbound topology. No manual RequireCommand API is added. This slice configures the
+service and inbound capabilities, supplying no outbound requirements until usage analysis is
+implemented. It does not implement IBus sending or claim complete outbound route readiness.
+
+Later generator work will collect semantic IBus usages and compose command requirements from
+referenced assemblies. Portable compiler metadata and unresolved generic calls need explicit design.
+The generator must distinguish command routing, event publication and request/reply requirements.
+Production provider configuration remains separate work.
+
+The user explicitly deferred that discovery work and rejected RequireCommand as a registration
+fallback: it duplicates knowledge at call sites and can drift. Any future explicit declaration for
+unresolved usage should live near the usage or helper; its contract remains undecided. The current
+registration slice is approved by the user's instruction to commit and move on.
 
 ## Later work — intent only
 

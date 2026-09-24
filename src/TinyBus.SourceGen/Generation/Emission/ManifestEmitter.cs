@@ -25,7 +25,38 @@ internal sealed class ManifestEmitter
         writer.Unindent();
         writer.WriteLine("}");
 
+        writer.WriteLine();
+        WriteApplicationRegistration(writer);
+
         return writer.ToString();
+    }
+
+    private static void WriteApplicationRegistration(SourceWriter writer)
+    {
+        writer.WriteLine("namespace TinyBus");
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("internal static class GeneratedTinyBusServiceCollectionExtensions");
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddTinyBus(");
+        writer.Indent();
+        writer.WriteLine("this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services,");
+        writer.WriteLine("global::System.Action<global::TinyBus.TinyBusOptions> configure)");
+        writer.Unindent();
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("global::TinyBus.TinyBusServiceCollectionExtensions.AddTinyBus<global::TinyBus.Generated.GeneratedTinyBusManifest>(services, configure);");
+        writer.WriteLine();
+        writer.WriteLine("global::TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);");
+        writer.WriteLine();
+        writer.WriteLine("return services;");
+        writer.Unindent();
+        writer.WriteLine("}");
+        writer.Unindent();
+        writer.WriteLine("}");
+        writer.Unindent();
+        writer.WriteLine("}");
     }
 
     private static void WriteHeader(SourceWriter writer)

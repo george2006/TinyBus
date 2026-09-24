@@ -20,30 +20,29 @@ public sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
 }
 ```
 
-In the root application, combine the generated manifest with an explicit service identity:
+In the root application, register TinyBus with its logical service identity:
 
 ```csharp
-var service = new ServiceIdentity("payments");
-var manifest = new TinyBus.Generated.GeneratedTinyBusManifest();
-var topology = manifest.CreateTopology(service);
+using Microsoft.Extensions.DependencyInjection;
+using TinyBus;
+
+services.AddTinyBus(bus =>
+{
+    bus.Service("payments");
+});
 ```
 
-The topology includes local handlers and contributions from assemblies referenced by the root
-compilation. Its service identity is supplied by the application; it is not inferred from an
-assembly name. This creates metadata only and does not activate handlers or start a transport.
+The generated entry point binds the root application's composed manifest, including referenced
+handler libraries. It registers ServiceTopology, scoped handlers, the local route cache and the
+topology worker. The callback runs during registration. Configure one TinyBus runtime per service
+collection; a second AddTinyBus call is rejected. The application supplies handler dependencies
+and owns service-provider scopes.
 
-Register the generated command, event and request handlers with Microsoft DI:
-
-```csharp
-var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
-```
-
-This includes local and referenced handlers, with scoped lifetimes. Repeated calls preserve each
-service/implementation pair once, including all distinct event handlers. The application supplies
-handler dependencies and owns service-provider scopes.
-TinyBus references DI abstractions; building a provider requires the application's
-DI container package.
+Host startup requires implementations of ITopologyReconciler and ICommandRouteSource in DI. Missing
+providers or failed initialization prevent startup. There is no default production provider yet.
+Outbound requirements will be inferred from IBus usage in a later generator slice; this registration
+slice currently supplies no outbound requirements and does not implement IBus sending.
+TinyBus references DI and Hosting abstractions; applications supply their DI container and host.
 
 Execute a command through an existing scope:
 
@@ -106,6 +105,8 @@ each event outcome, and resolves the request handler to obtain its typed payment
 The handlers write their invocations to the console; they do not persist payment or order state.
 All execution is local to the host process. The request example calls the handler directly because
 the request executor is internal and the transport request/reply runtime is not implemented yet.
+The sample exercises AddTinyBus registration and local execution through a service provider; it does
+not start a Generic Host or the topology worker without a topology provider.
 
 Run `tests/TinyBus.PackageTests/Verify-Package.ps1` to verify the same sample through the NuGet package,
 including handler execution, cross-assembly diagnostics and compiler-only generator placement.
@@ -116,5 +117,5 @@ Provider contracts expose additive service reconciliation through `ITopologyReco
 route loading through `ICommandRouteSource`. These exchange logical routing facts (`CommandRoute`);
 physical destinations belong to the provider. Only an in-memory test implementation exists so far.
 An internal topology worker gates host startup on successful reconciliation, required-route validation
-and immutable cache publication. Public host registration and production providers remain future work.
+and immutable cache publication. AddTinyBus registers that worker; production providers remain future work.
 Transports, persistence, background refresh, receive workers and retries are not implemented yet.

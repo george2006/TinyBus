@@ -3,16 +3,18 @@ using TinyBus;
 using TinyBus.Sample.Contracts;
 using TinyBus.Sample.Host;
 
-var service = new ServiceIdentity(args.Length > 0 ? args[0] : "commerce");
-var manifest = new TinyBus.Generated.GeneratedTinyBusManifest();
-var topology = manifest.CreateTopology(service);
-
-WriteTopology(topology);
-
+var serviceName = args.Length > 0 ? args[0] : "commerce";
 var services = new ServiceCollection();
-TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
+services.AddTinyBus(bus =>
+{
+    bus.Service(serviceName);
+});
+
 var options = new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true };
 using var provider = services.BuildServiceProvider(options);
+var topology = provider.GetRequiredService<ServiceTopology>();
+WriteTopology(topology);
+
 using var scope = provider.CreateScope();
 
 await ExecuteCommands(scope.ServiceProvider);
