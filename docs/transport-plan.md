@@ -3,6 +3,10 @@
 Status: the first in-memory topology slice is implemented, verified and approved.
 The second slice's public reconciliation/loading seams are implemented, verified and approved.
 The third slice's reusable ownership validation is implemented, verified and approved.
+The subsequent correction keeps CommandRoute passive and moves checks to their owning boundaries;
+that correction is approved. The user's TopologyWorker proposal replaces the rejected initializer;
+startup readiness and Hosting.Abstractions in TinyBus are approved. The worker slice is implemented,
+verified and approved.
 Production transport send/receive contracts remain proposals. Native activation is complete
 at `ef1180d`.
 
@@ -238,8 +242,9 @@ the route cache remains internal and synchronous. CommandRoute becomes public at
 
 Startup ordering has a deliberate limit: a cache loaded before an owner registers remains missing
 that route until an explicit load. There is no automatic refresh loop or network-on-miss behavior.
-Production readiness/retry policy for startup remains future design. Tests exercise explicit reload
-without mutating the old snapshot.
+The next slice below requires a complete initial load before startup succeeds. A required owner
+not yet registered therefore prevents startup; automatic startup retries remain outside this slice.
+Existing tests exercise explicit reload without mutating the old snapshot.
 
 ## ASB ownership exploration — adapter detail, not a blocker for this proof
 
@@ -329,6 +334,94 @@ control would still race.
 All 106 tests pass in Release. The three additional cases exercise duplicate same-owner input and
 conflicting cache input in both orders. Existing additive reconciliation and allocation checks pass.
 Storage remains in the test project; no global in-memory topology is added to production.
+
+## Responsibility correction: route facts and ownership policy — implemented, verified and approved
+
+The user clarified that CommandRoute is a fact, not the owner of distributed-topology policy.
+It is again a passive readonly record struct. Reconciliation validates authoritative ownership;
+CommandRouteCache validates only that a supplied snapshot has no conflicting route facts. Local
+snapshot validation cannot establish ownership in shared infrastructure.
+
+The existing small checks stay at these two boundaries. No public validator abstraction is added
+merely to share their implementation. Behavior, deterministic diagnostics and same-owner idempotency
+remain unchanged. This supersedes the placement of ValidateOwner on CommandRoute in slice 3 above.
+The production reconciliation implementation and its atomic ownership enforcement remain future work.
+
+## Slice 4: per-service topology worker — implemented, verified and approved
+
+The user rejected TopologyInitializer and proposed an internal TopologyWorker : BackgroundService.
+The host is its consumer. The worker owns when reconciliation and route loading run within this
+service's lifecycle. The provider seams keep their existing write/read responsibilities.
+The user approved initial loading as a startup invariant. The worker's StartAsync awaits this
+sequence before starting its background phase:
+
+```csharp
+await reconciler.ReconcileAsync(serviceTopology, cancellationToken);
+
+var routes = await routeSource.LoadAsync(requiredContracts, cancellationToken);
+
+ValidateRequiredRoutes(routes);
+
+routeCache.Replace(routes, cancellationToken);
+```
+
+This outlines the implemented flow; cancellation checks also separate the phases. StartAsync completes
+only after successful validation and immutable snapshot publication. Then it calls base.StartAsync
+to start ExecuteAsync. Initialization does not run a second time in ExecuteAsync. That method is
+reserved for future refresh, using the same component and publication rules.
+The [BackgroundService implementation](https://github.com/dotnet/runtime/blob/v9.0.10/src/libraries/Microsoft.Extensions.Hosting.Abstractions/src/BackgroundService.cs)
+returns from its default StartAsync when ExecuteAsync yields, so initial loading must be awaited
+in the override before delegating to the base lifecycle.
+
+This slice performs initialization once. ExecuteAsync completes immediately. Waiting for change signals or periodically
+refreshing remains later work. The worker uses this service's topology and a supplied set of required
+outbound contracts; inbound handlers do not identify which commands this service sends.
+
+Replace on the existing internal cache validates supplied facts and builds a complete
+FrozenDictionary before publishing the new snapshot with Volatile.Write. Readers use Volatile.Read
+to obtain one complete snapshot
+and retain synchronous local lookup. Invalid replacement leaves the previous snapshot intact.
+CommandRoute stays passive; snapshot consistency checks remain inside the cache.
+
+Provider failure or cancellation must not publish an empty success. Failed reconciliation prevents
+loading. If loading fails after reconciliation, the added shared facts remain: there is no rollback
+across these operations. Initial provider or validation errors propagate from StartAsync and fail
+host startup. Startup cancellation also propagates; no background phase starts on an initial failure.
+
+The user's requirement to load all required routes is interpreted strictly: every required contract must
+have an owner before publication. A missing owner fails startup rather than leaving the first Send
+to discover incomplete initialization. This adds a startup completeness requirement without changing
+ICommandRouteSource: it still omits unknown owners, and TryResolve still returns false for unknown
+contracts without network-on-miss. With no required outbound commands, a successfully loaded empty
+snapshot is valid. An empty initialized snapshot and an uninitialized cache are distinct states.
+Reconciliation remains additive, so an older replica cannot erase newer declarations.
+
+Hosting integration must await this worker's StartAsync before advertising TinyBus readiness.
+Any TinyBus send attempted before initialization must be rejected, not served by an empty fallback.
+The cache rejects lookup before initialization. IBus has no implementation yet; carry this guarantee
+through the send path when the outbound runtime is added.
+Hosted consumers that send during startup must respect this ordering, including when host service
+startup is configured to run concurrently. Do not claim arbitrary startup consumers are gated by
+registration order alone.
+
+The user approved Microsoft.Extensions.Hosting.Abstractions in TinyBus alongside DI abstractions.
+Package verification checks both direct dependencies. Tests reference Microsoft.Extensions.Hosting
+to exercise a real host. Public host registration and production provider implementations remain
+outside this slice; the worker is registered explicitly in the tests.
+
+All 121 tests pass in Release, including fifteen new cases. Real-host tests use the test accumulator
+to prove startup stays pending during reconciliation or loading, succeeds after route publication,
+and fails on provider errors, conflicts, missing required owners or cancellation. Failed startup
+does not signal ApplicationStarted or expose usable cache contents. No required commands permits
+a successfully initialized empty snapshot. Cache tests verify rejected replacement preserves prior
+state and readers retain the previous snapshot while construction runs on another thread. Existing
+additive and zero-allocation warmed lookup checks still pass. Package verification passes with both
+consumers and expected diagnostics. These tests do not establish distributed provider guarantees.
+
+The simpler alternative is application-owned startup code calling the two seams. The worker adds
+one internal class and hosting integration, giving each host an owned lifecycle for this operation
+and future refresh. No additional coordinator or initializer was introduced. The user approved this
+slice and the ownership responsibility correction by requesting a commit and continuation.
 
 ## Later work — intent only
 

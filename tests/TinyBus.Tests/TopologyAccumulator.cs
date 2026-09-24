@@ -72,7 +72,16 @@ internal sealed class TopologyAccumulator : ITopologyReconciler, ICommandRouteSo
                 continue;
             }
 
-            existingRoute.ValidateOwner(topology.Service);
+            if (existingRoute.Service == topology.Service)
+            {
+                continue;
+            }
+
+            var owners = new[] { existingRoute.Service.Value, topology.Service.Value };
+            Array.Sort(owners, StringComparer.Ordinal);
+            var error = $"Command '{message.Contract.Name}' version {message.Contract.Version} "
+                + $"has conflicting owners '{owners[0]}' and '{owners[1]}'.";
+            throw new InvalidOperationException(error);
         }
     }
 

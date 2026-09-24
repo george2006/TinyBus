@@ -315,8 +315,9 @@ The current plan and in-memory topology slice live in [transport-plan.md](transp
 The ownership/cache proof and public ITopologyReconciler/ICommandRouteSource seams are approved.
 ITopologyReconciler writes the calling service's capabilities; ICommandRouteSource reads accumulated
 command ownership. CommandRoute is public, while its immutable runtime cache remains internal and
-synchronous. Reusable ownership validation now lives on CommandRoute and is used by cache construction
-and the test accumulator; this extraction is approved. Production send/receive interfaces remain drafts.
+synchronous. CommandRoute is a passive routing fact. Ownership enforcement belongs to reconciliation;
+the cache checks only the consistency of its supplied snapshot. Production send/receive interfaces
+remain drafts.
 Transport remains the agreed name. Successful sending means confirmed durable transport acceptance,
 separate from handler completion. Start with a command journey and challenge gaps in routing,
 outbound contract metadata, ownership and failure behavior before introducing interfaces.
@@ -333,6 +334,16 @@ An older replica cannot erase declarations introduced by a newer one. Retirement
 and deletion require a later revision policy. Startup reconciliation and startup route-cache loading
 are the intended initial lifecycle. Lookups are synchronous and local; periodic refresh and
 notification mechanisms remain deferred.
+
+The internal TopologyWorker : BackgroundService reconciles, loads required routes
+and replace the local immutable snapshot. It replaces the rejected TopologyInitializer proposal.
+Startup readiness is now agreed: await reconciliation, load all required command routes, validate
+and publish the immutable snapshot before TinyBus is started. Initial failure or cancellation fails
+startup; initialization must not race the first Send. TopologyWorker.StartAsync owns this sequence,
+with ExecuteAsync reserved for later background refresh. The user approved Hosting.Abstractions in
+TinyBus. Implementation and real-host tests are complete and approved; public host registration
+and production providers remain later work.
+See the next slice in [transport-plan.md](transport-plan.md).
 
 PostgreSQL persists topology in shared tables; ASB materializes transport-native resources and
 ownership metadata. The common contract does not mandate shared database storage or encode physical

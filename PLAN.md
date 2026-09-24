@@ -518,3 +518,52 @@ input orders. Existing reconciliation, additive deployment, cancellation and all
 The Release solution build has zero warnings/errors. This focused extraction changes no packaging or
 generator behavior; package verification last passed with slice 2. Approved by the user's instruction
 to commit and move on, together with the provider seams from slice 2.
+
+Topology slices 2 and 3 committed as `792a035`.
+
+### Ownership responsibility correction — implemented, verified and approved
+
+The user clarified that CommandRoute represents a fact, not distributed-topology policy. Restore
+it to a passive record. Reconciliation checks command ownership before registration; cache construction
+checks only consistency of its supplied snapshot. Both preserve same-owner idempotency, conflict
+diagnostics and execution order. The cache does not establish authoritative ownership in shared storage.
+
+The small local checks remain at their respective boundaries rather than introducing another public
+policy abstraction to share them. The production provider still needs atomic enforcement when it is
+implemented; the accumulator remains test-only. The initializer proposal was rejected and withdrawn.
+Verification: all 106 tests pass in Release, including existing ownership, snapshot and allocation
+checks. Approved together with the topology worker by the user's instruction to commit and move on.
+
+### Topology slice 4: per-service topology worker — implemented, verified and approved
+
+The user's internal TopologyWorker derives from BackgroundService. Its flow is explicit:
+reconcile this service's topology, load required command routes, then replace the local cache snapshot.
+The worker owns the hosted lifecycle; the existing provider seams own reconciliation and route reads.
+TopologyInitializer was not approved and will not be introduced.
+
+CommandRouteCache.Replace validates and builds a complete immutable snapshot before
+atomically publishing it. Readers retain synchronous local lookup; a failed replacement preserves
+the previous snapshot. First reconcile/load is the scope; refresh signals and periodic loops stay later.
+
+The user approved initial topology loading as a startup invariant: reconcile, load all required
+command routes, validate, publish the immutable snapshot, then consider TinyBus started. Initial
+failure or cancellation propagates from startup. Eventual initialization in ExecuteAsync is insufficient.
+This sequence runs inside TopologyWorker.StartAsync, before starting the background phase; future
+refresh belongs to the same worker. No additional initializer or readiness abstraction is proposed.
+
+Required routes are interpreted strictly: missing owners prevent startup; no required outbound commands
+allows a successfully initialized empty snapshot. The provider can still omit unknown owners and
+the cache still returns false for unknown contracts. Completeness is checked at startup before publication.
+
+The user approved Microsoft.Extensions.Hosting.Abstractions in TinyBus. Package verification now
+checks the two direct dependencies, DI and Hosting abstractions. The full hosting implementation is
+used only by tests. Required outbound contracts are supplied explicitly, not inferred from handlers.
+The worker remains internal; public host registration and production adapters are not part of this slice.
+ExecuteAsync completes immediately for now; no refresh loop or artificial wait is introduced.
+
+Verification: all 121 Release tests pass, including fifteen new cases covering real-host readiness,
+provider failures, cancellation, missing ownership, an initialized empty snapshot, replacement
+failure/cancellation and concurrent lookup during snapshot construction. Warmed lookups still
+allocate zero bytes on the calling thread. Package verification passes both consumers and the
+expected diagnostic cases with the new dependency contract. Approved by the user's instruction to
+commit and move on.

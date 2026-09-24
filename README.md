@@ -115,5 +115,6 @@ compile-time topology diagnostics, scoped registrations and local handler execut
 Provider contracts expose additive service reconciliation through `ITopologyReconciler` and startup
 route loading through `ICommandRouteSource`. These exchange logical routing facts (`CommandRoute`);
 physical destinations belong to the provider. Only an in-memory test implementation exists so far.
-Transports, persistence, workers, retries and distributed
-runtime behavior are intentionally not implemented yet.
+An internal topology worker gates host startup on successful reconciliation, required-route validation
+and immutable cache publication. Public host registration and production providers remain future work.
+Transports, persistence, background refresh, receive workers and retries are not implemented yet.

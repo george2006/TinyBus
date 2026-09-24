@@ -50,8 +50,12 @@ try {
     }
 
     $dependencies = @($manifest.SelectNodes("//*[local-name()='dependency']"))
-    if ($dependencies.Count -ne 1 -or $dependencies[0].id -ne 'Microsoft.Extensions.DependencyInjection.Abstractions') {
-        throw 'TinyBus must depend only on Microsoft.Extensions.DependencyInjection.Abstractions.'
+    $expectedDependencies = @(
+        'Microsoft.Extensions.DependencyInjection.Abstractions',
+        'Microsoft.Extensions.Hosting.Abstractions')
+    $dependencyDifference = Compare-Object -ReferenceObject $expectedDependencies -DifferenceObject $dependencies.id
+    if ($dependencies.Count -ne $expectedDependencies.Count -or $dependencyDifference) {
+        throw 'TinyBus must depend only on DI and Hosting abstractions.'
     }
 }
 finally {
