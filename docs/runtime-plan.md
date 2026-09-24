@@ -90,9 +90,8 @@ Planned slices:
    Implemented, verified and approved.
 
 Implementation details, verification and approval history live in [`PLAN.md`](../PLAN.md).
-Multi-assembly topology and the generator refinements are approved. Native handler activation and
-invocation is the current feature; registration and local command, event and request execution are
-implemented, verified and approved.
+Multi-assembly topology and native handler activation/invocation are implemented, verified and
+approved. Distributed topology and local command routing are the current feature.
 
 Approved seam:
 
@@ -270,8 +269,8 @@ single-assembly consumer also proves command invocation and scoped isolation.
 This slice changes samples and verification only. It introduces no transport or runtime contract.
 
 Verification passed: direct sample execution, Release solution build with zero warnings/errors,
-all eighty-five tests and isolated package verification. The user approved this slice and requested
-a pause until the next session. Native activation is complete; transport-boundary design comes next.
+all eighty-five tests and isolated package verification. The user approved this slice, committed as
+`ef1180d`. Native activation is complete; the resumed session is designing the transport boundary.
 
 #### Request/response transport design discussion — open
 
@@ -311,6 +310,30 @@ Approval covers the local registration and invocation slice above. Agree the rem
 behavior before its implementation, and retain the transport-seam review before PostgreSQL work.
 
 ### 3. Transport-independent outbound and inbound boundaries
+
+The current plan and in-memory topology slice live in [transport-plan.md](transport-plan.md).
+The user authorized the minimal ownership/cache proof; production transport interfaces remain drafts.
+Transport remains the agreed name. Successful sending means confirmed durable transport acceptance,
+separate from handler completion. Start with a command journey and challenge gaps in routing,
+outbound contract metadata, ownership and failure behavior before introducing interfaces.
+
+Each service combines its generated manifest(s) with ServiceIdentity as local ServiceTopology and
+reconciles only its own capabilities into shared transport infrastructure. Services never exchange
+full manifests. No central TinyBus coordinator, global manifest service or permanent daemon exists.
+The infrastructure accumulates ownership/subscription facts; runtime caches contain only needed
+command routes. Applications do not maintain a second manual routing map, and shared DTO assemblies
+are optional. Repeated instances represent one logical service.
+
+For the current slice reconciliation is additive: absence from a manifest is never deletion intent.
+An older replica cannot erase declarations introduced by a newer one. Retirement, ownership transfer
+and deletion require a later revision policy. Startup reconciliation and startup route-cache loading
+are the intended initial lifecycle. Lookups are synchronous and local; periodic refresh and
+notification mechanisms remain deferred.
+
+PostgreSQL persists topology in shared tables; ASB materializes transport-native resources and
+ownership metadata. The common contract does not mandate shared database storage or encode physical
+destination names. The ASB representation is an adapter decision, not a prerequisite for the memory
+proof. The user's draft transport interfaces and ten design conclusions are recorded in the plan.
 
 Design the smallest concrete transport seam for TinyBus outbound operations and native delivery.
 The design must define:

@@ -433,6 +433,45 @@ prints both successful event outcomes and the expected payment ID/status. The ne
 still report TBUS003, TBUS004 and TBUS005 as expected. Approved by the user's instruction to commit
 and wait for the next session.
 
-Session handoff: stop after this slice. Native activation is complete; the next
-feature is transport-independent outbound/inbound design. Handler context, middleware and open
-request/reply semantics remain recorded design work, not authorization for implementation.
+Slice 5 committed as `ef1180d`. Native activation is complete.
+
+### Current feature: distributed topology and local command routing
+
+The resumed session keeps Transport as the name and durable acceptance as the meaning of a
+successful send, separate from handler completion. The user requested a concrete plan and asked
+that unclear assumptions be challenged.
+
+The plan is in [docs/transport-plan.md](docs/transport-plan.md). Each service reconciles only its own
+capabilities from ServiceIdentity plus generated manifests. Shared transport infrastructure accumulates
+routing facts. Services do not exchange full manifests and no permanent central coordinator exists.
+Senders use a local immutable cache of only the routing facts they need. The hot path is synchronous
+and never performs network or management-plane lookups. Shared DTO assemblies are not mandatory.
+
+Reconciliation is additive only: absence from a manifest is not deletion intent. An older replica
+must never erase topology introduced by a newer replica. Retirement requires a later revision policy.
+PostgreSQL and ASB own their different infrastructure representations behind the common semantics.
+
+### Topology slice 1: in-memory ownership and route cache — implemented, verified and approved
+
+The user's pasted brief authorized a minimal command ownership model, test accumulator and immutable
+route cache, with no transport implementation. CommandRoute and CommandRouteCache are internal in
+TinyBus/Routing. TryResolve uses a private FrozenDictionary and returns false for an absent owner.
+No resolver interface, new package or public SPI is needed for this proof.
+
+The test-only TopologyAccumulator stores command ownership and event subscription facts, validates
+conflicts before changing state and loads only requested command routes. Repeated service replicas
+are idempotent; different command owners fail with a deterministic diagnostic. Commands and event
+subscriptions are never removed because an older replica omits them. Existing cache snapshots remain
+unchanged until the caller explicitly loads a new one.
+
+The plan documents all ten design questions from the brief, including visibility, cache misses,
+rolling deployment, retirement and ASB ownership options. Production adapters, distributed concurrency,
+request ownership, network I/O, persistence, refresh loops and workers remain outside this slice.
+
+Verification: all ninety-five tests pass in Release (ten new cases). The solution builds with zero
+warnings/errors. Tests cover ownership conflicts in both service registration orders, no partial
+registration on conflict, replica idempotency, event fan-out, versioned lookup, filtered immutable
+snapshots and explicit cache reload. The rolling-deployment test preserves both a newer command
+and a newer event subscription after an older replica reconciles. 10,000 warmed route lookups
+allocate zero bytes on the calling thread. Package verification was not rerun: packaging, public
+APIs and generator output are unchanged. Approved by the user's instruction to commit and move on.
