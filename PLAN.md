@@ -329,3 +329,23 @@ Approved by the user's instruction to commit and move on.
 Execution follows in a separate slice. Handler context with publishing capability and a small
 middleware pipeline are recorded as future intent in
 [`docs/runtime-plan.md`](docs/runtime-plan.md); their APIs and mechanics remain deferred.
+
+Slice 1 committed as `b09d27a`.
+
+### Native activation slice 2: typed command execution — implemented, verified and approved
+
+The approved concrete `CommandExecutor` resolves `ICommandHandler<TCommand>` from the caller's
+scoped provider and returns `HandleAsync` directly. It preserves the command, cancellation token,
+completion and failures. The caller owns the scope and keeps it alive until execution completes.
+No generator changes, invocation delegates, reflection or extra async wrapper are introduced.
+
+Ten new test cases cover scoped invocation, synchronous and pending completion, synchronous and
+asynchronous failures, cancellation before/during execution, missing registration, allocations and
+an executable generated-registration scenario with an internal handler and scoped dependency.
+The Release solution build passes with zero warnings/errors and all sixty-six tests pass.
+Both allocation cases measure zero bytes over 10,000 warmed
+calls, including typed struct commands. The pending case reuses a handler-owned task to isolate
+dispatch; scope creation, first activation and handler/task allocations are outside measurement.
+
+Approved by the user's instruction to commit and move on. Event execution is the next slice;
+ordering and failure behavior require agreement before implementation.

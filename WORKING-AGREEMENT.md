@@ -83,7 +83,9 @@ No commits, pushes, publishing, broad formatting, or unrelated cleanup unless re
 
 ## Generator structure
 
-Use the Tiny Suite generators as references, not templates to copy wholesale.
+Use TinyValidations, TinyDispatcher and TinyFlags as the generator references. Inspect their
+relevant code before designing or changing generator behavior, and follow the suite's established
+style. Use them as references, not templates to copy wholesale.
 
 - `Discovery` performs the initial syntax filtering.
 - `Analysis` resolves Roslyn symbols and produces plain models.

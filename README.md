@@ -41,9 +41,21 @@ TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);
 
 This includes local and referenced handlers, with scoped lifetimes. Repeated calls preserve each
 service/implementation pair once, including all distinct event handlers. The application supplies
-handler dependencies and owns service-provider scopes. Request registration and handler execution
-remain later slices. TinyBus references DI abstractions; building a provider requires the application's
+handler dependencies and owns service-provider scopes. Request registration remains a later slice.
+TinyBus references DI abstractions; building a provider requires the application's
 DI container package.
+
+Execute a command through an existing scope:
+
+```csharp
+var executor = new TinyBus.CommandExecutor(scope.ServiceProvider);
+await executor.ExecuteAsync(command, cancellationToken);
+```
+
+The executor resolves the registered command handler and returns its completion directly. Keep the
+scope alive until execution completes. Failures and cancellation propagate to the caller. This is
+local handler execution; sending through a transport, event execution and request execution remain
+later slices.
 
 Run the composed topology sample:
 

@@ -71,7 +71,7 @@ Planned slices:
 
 Implementation details, verification and approval history live in [`PLAN.md`](../PLAN.md).
 Multi-assembly topology and the generator refinements are approved. Native handler activation and
-invocation is the current feature; only its registration slice is implemented.
+invocation is the current feature; registration and typed command execution are implemented.
 
 Approved seam:
 
@@ -137,11 +137,40 @@ Verify real service-provider resolution for local and referenced internal handle
 for a shared event, repeated registration and overlapping assembly references, the chosen lifetime,
 and an empty assembly. Existing topology diagnostics continue to gate generation.
 
-For the following command execution slice, resolve `ICommandHandler<TCommand>` and return its
+#### Slice 2: typed command execution — implemented, verified and approved
+
+Existing generated registrations bind command handler interfaces to concrete scoped handlers.
+The approved addition is a concrete `CommandExecutor` in TinyBus core, constructed with the
+caller's scoped `IServiceProvider`. Its single operation is:
+
+```csharp
+ValueTask ExecuteAsync<TCommand>(TCommand command, CancellationToken cancellationToken = default)
+```
+
+It resolves a handler for each call from that provider and invokes it directly. The caller owns
+the scope and keeps it alive until execution completes. The executor holds the provider, not a
+cached handler, and introduces one allocation when constructed. No executor interface or automatic
+executor registration is introduced. Its contract and implementation are approved.
+
+The simpler alternative was to put resolution and invocation in each caller. The concrete executor
+gives callers one TinyBus operation for command execution. This is inbound local execution;
+the existing IBus SendAsync contract remains part of the future outbound path.
+
+Verify real scoped resolution through generated registrations, exact command/token forwarding,
+synchronous and asynchronous completion, synchronous and asynchronous failures, cancellation and
+missing registration. Pass cancellation to the handler and preserve its outcome. No scope creation,
+retry, acknowledgement, event/request execution, handler context or middleware is added here.
+
+Resolve `ICommandHandler<TCommand>` and return its
 `HandleAsync` result directly. Keep messages typed and avoid an extra async wrapper. The allocation
 requirement is zero TinyBus dispatch allocations per successful command after initialization,
 verified by measurement. Record synchronous and asynchronous completion separately, identifying
 handler work, DI activation and scope costs separately. Registration allocations occur at startup.
+
+Verification: all sixty-six tests pass in Release, including generated registration with an
+internal handler. Allocation tests measure zero bytes over 10,000 warmed calls for synchronous
+completion and for returning a pending handler-owned task. They measure dispatch on the calling
+thread, excluding scope creation, initial resolution and handler-owned task/continuation work.
 
 ### 3. Transport-independent outbound and inbound boundaries
 
