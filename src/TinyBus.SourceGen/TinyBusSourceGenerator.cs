@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using TinyBus.SourceGen.Analysis;
@@ -16,104 +18,153 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var analysis = Analyze(context.SyntaxProvider);
-        var validation = Validate(analysis);
-        var definitions = ExtractValidDefinitions(validation);
-        var contributions = AnalyzeReferences(context.CompilationProvider);
-        var assemblyName = ReadAssemblyName(context.CompilationProvider);
-        var topologyIssues = ValidateTopology(assemblyName, validation, contributions);
-        var manifest = GenerateManifest(assemblyName, definitions, contributions);
-
-        RegisterManifest(context, manifest);
-        ReportDiagnostics(context, validation, topologyIssues);
+        var handlers = FindHandlers(context);
+        context.RegisterSourceOutput(handlers, BuildManifest);
     }
 
-    private static IncrementalValuesProvider<MessageHandlerAnalysis> Analyze(
-        SyntaxValueProvider syntaxProvider)
+    private static void BuildManifest(
+        SourceProductionContext output,
+        (Compilation Compilation, ImmutableArray<MessageHandlerAnalysis> Handlers) input)
     {
-        return syntaxProvider.CreateSyntaxProvider(
-                HandlerDiscovery.IsCandidateDeclaration,
-                static (candidate, cancellationToken) =>
-                    new HandlerAnalyzer().Analyze(candidate, cancellationToken))
-            .SelectMany(static (definitions, _) => definitions);
+        var cancellationToken = output.CancellationToken;
+        var analysis = Analyze(input.Compilation, input.Handlers, cancellationToken);
+
+        var validation = Validate(
+            analysis.AssemblyName, analysis.Handlers, analysis.Contributions, cancellationToken);
+        var hasErrors = ReportDiagnostics(output, input.Compilation, validation.Issues);
+
+        if (hasErrors)
+        {
+            return;
+        }
+
+        var manifest = Generate(
+            analysis.AssemblyName, validation.Definitions, analysis.Contributions, cancellationToken);
+        WriteManifest(output, manifest);
     }
 
-    private static IncrementalValuesProvider<MessageValidationResult> Validate(
-        IncrementalValuesProvider<MessageHandlerAnalysis> analysis)
+    private static (
+        string AssemblyName,
+        ImmutableArray<MessageHandlerAnalysis> Handlers,
+        ImmutableArray<ReferencedMessageContribution> Contributions) Analyze(
+        Compilation compilation,
+        ImmutableArray<MessageHandlerAnalysis> handlers,
+        CancellationToken cancellationToken)
     {
-        return analysis.Select(static (candidate, _) =>
-            new MessageHandlerValidator().Validate(candidate));
+        var assemblyName = compilation.AssemblyName ?? "Assembly";
+        var contributionAnalyzer = new ReferencedContributionAnalyzer();
+        var contributions = contributionAnalyzer.Analyze(compilation, cancellationToken);
+
+        return (assemblyName, handlers, contributions);
     }
 
-    private static IncrementalValuesProvider<MessageHandlerDefinition> ExtractValidDefinitions(
-        IncrementalValuesProvider<MessageValidationResult> validation)
+    private static (
+        ImmutableArray<MessageHandlerDefinition> Definitions,
+        ImmutableArray<MessageIssue> Issues) Validate(
+        string assemblyName,
+        ImmutableArray<MessageHandlerAnalysis> analysis,
+        ImmutableArray<ReferencedMessageContribution> contributions,
+        CancellationToken cancellationToken)
+    {
+        var handlers = ValidateHandlers(analysis, cancellationToken);
+
+        var topologyValidator = new TopologyValidator();
+        var topologyIssues = topologyValidator.Validate(
+            assemblyName, handlers, contributions, cancellationToken);
+
+        var definitions = ExtractValidDefinitions(handlers);
+        var issues = CombineValidationIssues(handlers, topologyIssues);
+
+        return (definitions, issues);
+    }
+
+    private static (string HintName, string Source) Generate(
+        string assemblyName,
+        ImmutableArray<MessageHandlerDefinition> definitions,
+        ImmutableArray<ReferencedMessageContribution> contributions,
+        CancellationToken cancellationToken)
+    {
+        var generation = new ManifestGeneration();
+        return generation.Generate(assemblyName, definitions, contributions, cancellationToken);
+    }
+
+    private static void WriteManifest(
+        SourceProductionContext output,
+        (string HintName, string Source) manifest)
+    {
+        var source = SourceText.From(manifest.Source, Encoding.UTF8);
+        output.AddSource(manifest.HintName, source);
+    }
+
+    private static ImmutableArray<MessageValidationResult> ValidateHandlers(
+        ImmutableArray<MessageHandlerAnalysis> analysis,
+        CancellationToken cancellationToken)
+    {
+        var validator = new MessageHandlerValidator();
+        var results = ImmutableArray.CreateBuilder<MessageValidationResult>(analysis.Length);
+
+        foreach (var candidate in analysis)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = validator.Validate(candidate);
+            results.Add(result);
+        }
+
+        return results.ToImmutable();
+    }
+
+    private static ImmutableArray<MessageHandlerDefinition> ExtractValidDefinitions(
+        ImmutableArray<MessageValidationResult> validation)
     {
         return validation
-            .Where(static result => result.Definition is not null)
-            .Select(static (result, _) => result.Definition!);
+            .Where(result => result.Definition is not null)
+            .Select(result => result.Definition!)
+            .ToImmutableArray();
     }
 
-    private static IncrementalValuesProvider<MessageIssue> ValidateTopology(
-        IncrementalValueProvider<string> assemblyName,
-        IncrementalValuesProvider<MessageValidationResult> validation,
-        IncrementalValueProvider<ImmutableArray<ReferencedMessageContribution>> contributions)
+    private static ImmutableArray<MessageIssue> CombineValidationIssues(
+        ImmutableArray<MessageValidationResult> handlers,
+        ImmutableArray<MessageIssue> topologyIssues)
     {
-        return assemblyName.Combine(validation.Collect()).Combine(contributions)
-            .Select(static (input, cancellationToken) =>
-                new TopologyValidator().Validate(
-                    input.Left.Left, input.Left.Right, input.Right, cancellationToken))
-            .SelectMany(static (issues, _) => issues);
+        return handlers.SelectMany(result => result.Issues)
+            .Concat(topologyIssues)
+            .ToImmutableArray();
     }
 
-    private static IncrementalValueProvider<(string HintName, string Source)> GenerateManifest(
-        IncrementalValueProvider<string> assemblyName,
-        IncrementalValuesProvider<MessageHandlerDefinition> definitions,
-        IncrementalValueProvider<ImmutableArray<ReferencedMessageContribution>> contributions)
+    private static bool ReportDiagnostics(
+        SourceProductionContext context,
+        Compilation compilation,
+        ImmutableArray<MessageIssue> issues)
     {
-        return assemblyName.Combine(definitions.Collect())
-            .Combine(contributions)
-            .Select(static (input, cancellationToken) =>
-                new ManifestGeneration().Generate(
-                    input.Left.Left, input.Left.Right, input.Right, cancellationToken));
+        var hasErrors = false;
+
+        foreach (var issue in issues)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+            var diagnostic = MessageDiagnosticReporter.Create(compilation, issue);
+            context.ReportDiagnostic(diagnostic);
+            hasErrors |= diagnostic.Severity == DiagnosticSeverity.Error;
+        }
+
+        return hasErrors;
     }
 
-    private static IncrementalValueProvider<ImmutableArray<ReferencedMessageContribution>> AnalyzeReferences(
-        IncrementalValueProvider<Compilation> compilation)
+    private static IncrementalValueProvider<(
+        Compilation Compilation,
+        ImmutableArray<MessageHandlerAnalysis> Handlers)> FindHandlers(
+        IncrementalGeneratorInitializationContext context)
     {
-        return compilation.Select(static (value, cancellationToken) =>
-            new ReferencedContributionAnalyzer().Analyze(value, cancellationToken));
-    }
+        var handlers = context.SyntaxProvider.CreateSyntaxProvider(
+            HandlerDiscovery.IsCandidateDeclaration,
+            static (candidate, cancellationToken) =>
+            {
+                var analyzer = new HandlerAnalyzer();
+                return analyzer.Analyze(candidate, cancellationToken);
+            })
+            .SelectMany(static (candidates, _) => candidates);
 
-    private static IncrementalValueProvider<string> ReadAssemblyName(
-        IncrementalValueProvider<Compilation> compilation)
-    {
-        return compilation.Select(static (value, _) => value.AssemblyName ?? "Assembly");
-    }
-
-    private static void RegisterManifest(
-        IncrementalGeneratorInitializationContext context,
-        IncrementalValueProvider<(string HintName, string Source)> manifest)
-    {
-        context.RegisterSourceOutput(manifest, static (output, source) =>
-            output.AddSource(source.HintName, SourceText.From(source.Source, Encoding.UTF8)));
-    }
-
-    private static void ReportDiagnostics(
-        IncrementalGeneratorInitializationContext context,
-        IncrementalValuesProvider<MessageValidationResult> validation,
-        IncrementalValuesProvider<MessageIssue> topologyIssues)
-    {
-        var contractIssues = validation.SelectMany(static (result, _) => result.Issues);
-
-        RegisterDiagnostics(context, contractIssues);
-        RegisterDiagnostics(context, topologyIssues);
-    }
-
-    private static void RegisterDiagnostics(
-        IncrementalGeneratorInitializationContext context,
-        IncrementalValuesProvider<MessageIssue> issues)
-    {
-        context.RegisterSourceOutput(issues.Combine(context.CompilationProvider), static (output, input) =>
-            output.ReportDiagnostic(MessageDiagnosticReporter.Create(input.Right, input.Left)));
+        var collectedHandlers = handlers.Collect();
+        return context.CompilationProvider.Combine(collectedHandlers)
+            .Select(static (input, _) => (Compilation: input.Left, Handlers: input.Right));
     }
 }

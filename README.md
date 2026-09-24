@@ -23,13 +23,27 @@ public sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
 In the root application, combine the generated manifest with an explicit service identity:
 
 ```csharp
-var topology = new TinyBus.Generated.GeneratedTinyBusManifest()
-    .CreateTopology(new ServiceIdentity("payments"));
+var service = new ServiceIdentity("payments");
+var manifest = new TinyBus.Generated.GeneratedTinyBusManifest();
+var topology = manifest.CreateTopology(service);
 ```
 
 The topology includes local handlers and contributions from assemblies referenced by the root
 compilation. Its service identity is supplied by the application; it is not inferred from an
 assembly name. This creates metadata only and does not activate handlers or start a transport.
+
+Run the composed topology sample:
+
+```sh
+dotnet run --project samples/TinyBus.Sample.Host -- commerce.demo
+```
+
+The host combines its local command with the Orders and Payments handler libraries. Its five
+descriptors include both handlers for `OrderPlaced` and the response type for `GetPaymentStatus`.
+The libraries keep their handlers internal; composition uses their generated public manifests.
+
+Run `tests/TinyBus.PackageTests/Verify-Package.ps1` to verify the same sample through the NuGet package,
+including cross-assembly diagnostics and compiler-only generator placement.
 
 The current bootstrap contains the transport-independent contracts, generated manifests and
 compile-time topology diagnostics. Transports, persistence, workers, retries and distributed

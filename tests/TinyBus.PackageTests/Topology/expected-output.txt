@@ -1,0 +1,6 @@
+Service: commerce.packaged
+commerce.rebuild | 1 | Command | TinyBus.Sample.Host.RebuildReadModel | TinyBus.Sample.Host.RebuildReadModelHandler | -
+orders.order-placed | 1 | Event | TinyBus.Sample.Contracts.OrderPlaced | TinyBus.Sample.Orders.OrderPlacedHandler | -
+TinyBus.Sample.Contracts.CapturePayment | 1 | Command | TinyBus.Sample.Contracts.CapturePayment | TinyBus.Sample.Payments.CapturePaymentHandler | -
+TinyBus.Sample.Contracts.GetPaymentStatus | 1 | Request | TinyBus.Sample.Contracts.GetPaymentStatus | TinyBus.Sample.Payments.GetPaymentStatusHandler | TinyBus.Sample.Contracts.PaymentStatus
+orders.order-placed | 1 | Event | TinyBus.Sample.Contracts.OrderPlaced | TinyBus.Sample.Payments.OrderPlacedHandler | -

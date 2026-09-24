@@ -61,6 +61,31 @@ public sealed class ReferencedTopologyDiagnosticTests
     }
 
     [Fact]
+    public void Reports_contract_and_topology_errors_in_the_same_compilation()
+    {
+        var contracts = CompileLibrary("Contracts", Contracts);
+        var library = CompileLibrary("Library", Handler("Command"), contracts);
+
+        var run = RunRoot(new[] { contracts, library }, Handler("Command", "LocalHandler"), """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using TinyBus;
+
+            [BusContract(" ")]
+            public sealed record InvalidMessage;
+
+            public sealed class InvalidHandler : IEventHandler<InvalidMessage>
+            {
+                public ValueTask HandleAsync(InvalidMessage message, CancellationToken cancellationToken)
+                    => ValueTask.CompletedTask;
+            }
+            """);
+
+        Assert.Equal(new[] { "TBUS001", "TBUS003", "TBUS003" }, run.Diagnostics.Select(value => value.Id));
+        Assert.All(run.Diagnostics, diagnostic => Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity));
+    }
+
+    [Fact]
     public void Orders_multiple_conflicts_independently_of_reference_and_source_order()
     {
         var contracts = CompileLibrary("Contracts", Contracts);
@@ -144,8 +169,13 @@ public sealed class ReferencedTopologyDiagnosticTests
         var compilation = SourceGeneratorTestHost.CreateCompilationWithReferences(
             "Root", references.Select(image => MetadataReference.CreateFromImage(image)), sources);
 
-        // Topology diagnostics fail the build without removing descriptors or breaking generated C#.
-        return SourceGeneratorTestHost.Run(compilation);
+        var run = SourceGeneratorTestHost.Run(compilation);
+        if (run.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            Assert.Empty(Assert.Single(run.Results).GeneratedSources);
+        }
+
+        return run;
     }
 
     private static string DescribeDiagnostic(Diagnostic diagnostic)

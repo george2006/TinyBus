@@ -110,5 +110,7 @@ if ($diagnosticExitCode -eq 0 -or ($diagnostics -join "`n") -notmatch 'error TBU
     throw "Expected the packaged generator to report TBUS003.`n$diagnostics"
 }
 
+& (Join-Path $PSScriptRoot 'Verify-Topology.ps1') -PackageVersion $version -RunDirectory $runDirectory
+
 Write-Host "TinyBus package verification passed. Artifacts: $runDirectory"
 exit 0

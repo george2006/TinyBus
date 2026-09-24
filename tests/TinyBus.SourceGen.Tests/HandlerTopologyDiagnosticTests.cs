@@ -88,6 +88,7 @@ public sealed class HandlerTopologyDiagnosticTests
         string expectedId,
         params string[] expectedLocations)
     {
+        Assert.Empty(Assert.Single(run.Results).GeneratedSources);
         Assert.All(run.Diagnostics, diagnostic => Assert.Equal(expectedId, diagnostic.Id));
 
         var locations = run.Diagnostics

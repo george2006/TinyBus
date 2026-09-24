@@ -16,6 +16,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/TinyBus.Sample.Contracts/TinyBus.Sample.Contracts.csproj" />
+    <Project Path="samples/TinyBus.Sample.Host/TinyBus.Sample.Host.csproj" />
     <Project Path="samples/TinyBus.Sample.Orders/TinyBus.Sample.Orders.csproj" />
     <Project Path="samples/TinyBus.Sample.Payments/TinyBus.Sample.Payments.csproj" />
   </Folder>

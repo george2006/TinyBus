@@ -21,22 +21,38 @@ internal sealed class TopologyValidator
             .ToImmutableArray();
         var issues = ImmutableArray.CreateBuilder<MessageIssue>();
 
+        AddDuplicateCommandHandlerIssues(issues, handlers, cancellationToken);
+        AddDuplicateRequestHandlerIssues(issues, handlers, cancellationToken);
+        AddConflictingSemanticsIssues(issues, handlers, cancellationToken);
+        AddReferencedIssues(issues, assemblyName, handlers, contributions, cancellationToken);
+
+        return issues.Distinct().ToImmutableArray();
+    }
+
+    private static void AddDuplicateCommandHandlerIssues(
+        ImmutableArray<MessageIssue>.Builder issues,
+        ImmutableArray<MessageHandlerAnalysis> handlers,
+        CancellationToken cancellationToken)
+    {
         AddDuplicateHandlerIssues(
             issues,
             handlers,
             MessageHandlerKind.Command,
             MessageIssueKind.DuplicateCommandHandler,
             cancellationToken);
+    }
+
+    private static void AddDuplicateRequestHandlerIssues(
+        ImmutableArray<MessageIssue>.Builder issues,
+        ImmutableArray<MessageHandlerAnalysis> handlers,
+        CancellationToken cancellationToken)
+    {
         AddDuplicateHandlerIssues(
             issues,
             handlers,
             MessageHandlerKind.Request,
             MessageIssueKind.DuplicateRequestHandler,
             cancellationToken);
-        AddConflictingSemanticsIssues(issues, handlers, cancellationToken);
-        AddReferencedIssues(issues, assemblyName, handlers, contributions, cancellationToken);
-
-        return issues.Distinct().ToImmutableArray();
     }
 
     private static void AddDuplicateHandlerIssues(
@@ -48,7 +64,7 @@ internal sealed class TopologyValidator
     {
         var duplicateMessages = handlers
             .Where(handler => handler.Kind == kind)
-            .GroupBy(handler => handler.MessageTypeIdentity, StringComparer.Ordinal)
+            .GroupBy(handler => handler.MessageType.Identity, StringComparer.Ordinal)
             .Where(HasMultipleHandlers)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
 
@@ -58,7 +74,8 @@ internal sealed class TopologyValidator
 
             foreach (var handler in DistinctHandlers(message))
             {
-                issues.Add(CreateIssue(issueKind, handler));
+                var issue = CreateIssue(issueKind, handler);
+                issues.Add(issue);
             }
         }
     }
@@ -69,7 +86,7 @@ internal sealed class TopologyValidator
         CancellationToken cancellationToken)
     {
         var conflictingMessages = handlers
-            .GroupBy(handler => handler.MessageTypeIdentity, StringComparer.Ordinal)
+            .GroupBy(handler => handler.MessageType.Identity, StringComparer.Ordinal)
             .Where(HasConflictingSemantics)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
 
@@ -79,7 +96,8 @@ internal sealed class TopologyValidator
 
             foreach (var handler in DistinctHandlers(message))
             {
-                issues.Add(CreateIssue(MessageIssueKind.ConflictingMessageSemantics, handler));
+                var issue = CreateIssue(MessageIssueKind.ConflictingMessageSemantics, handler);
+                issues.Add(issue);
             }
         }
     }
@@ -107,7 +125,7 @@ internal sealed class TopologyValidator
         MessageIssueKind kind,
         MessageHandlerAnalysis handler)
     {
-        return new MessageIssue(kind, handler.MessageDisplayName, handler.HandlerLocation);
+        return new MessageIssue(kind, handler.MessageType.DisplayName, handler.HandlerLocation);
     }
 
     private static void AddReferencedIssues(
@@ -125,7 +143,7 @@ internal sealed class TopologyValidator
         {
             cancellationToken.ThrowIfCancellationRequested();
             var localHandlers = handlers
-                .Where(handler => handler.MessageTypeIdentity == message.Key)
+                .Where(handler => handler.MessageType.Identity == message.Key)
                 .ToImmutableArray();
             var referencedHandlers = message.ToImmutableArray();
 
@@ -169,8 +187,9 @@ internal sealed class TopologyValidator
         ImmutableArray<MessageHandlerAnalysis> localHandlers,
         ImmutableArray<ReferencedMessageContribution> referencedHandlers)
     {
-        var kinds = localHandlers.Select(handler => handler.Kind)
-            .Concat(referencedHandlers.Select(handler => handler.Kind));
+        var localKinds = localHandlers.Select(handler => handler.Kind);
+        var referencedKinds = referencedHandlers.Select(handler => handler.Kind);
+        var kinds = localKinds.Concat(referencedKinds);
         var hasConflictingSemantics = kinds.Distinct().Skip(1).Any();
         if (!hasConflictingSemantics)
         {
@@ -188,8 +207,10 @@ internal sealed class TopologyValidator
         ImmutableArray<MessageHandlerAnalysis> localHandlers,
         ImmutableArray<ReferencedMessageContribution> referencedHandlers)
     {
-        return localHandlers.Select(handler => $"{assemblyName}::{handler.HandlerTypeName}")
-            .Concat(referencedHandlers.Select(handler => $"{handler.AssemblyName}::{handler.HandlerTypeName}"))
+        var localNames = localHandlers.Select(handler => $"{assemblyName}::{handler.HandlerTypeName}");
+        var referencedNames = referencedHandlers.Select(handler => $"{handler.AssemblyName}::{handler.HandlerTypeName}");
+
+        return localNames.Concat(referencedNames)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToImmutableArray();
@@ -204,14 +225,18 @@ internal sealed class TopologyValidator
     {
         foreach (var handler in DistinctHandlers(localHandlers))
         {
-            issues.Add(CreateIssue(kind, handler));
+            var issue = CreateIssue(kind, handler);
+            issues.Add(issue);
         }
 
         // Metadata has no source span in the root; report the participating assemblies explicitly.
-        issues.Add(new MessageIssue(
+        var participants = string.Join(", ", handlerNames);
+        var handlerDetails = $". Handlers: {participants}";
+        var referencedIssue = new MessageIssue(
             kind,
             referencedHandlers[0].MessageTypeName,
             location: null,
-            handlerDetails: $". Handlers: {string.Join(", ", handlerNames)}"));
+            handlerDetails: handlerDetails);
+        issues.Add(referencedIssue);
     }
 }

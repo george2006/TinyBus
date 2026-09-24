@@ -4,7 +4,7 @@ using TinyBus.Sample.Contracts;
 
 namespace TinyBus.Sample.Payments;
 
-public sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
+internal sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
 {
     public ValueTask HandleAsync(
         CapturePayment command,
@@ -14,7 +14,7 @@ public sealed class CapturePaymentHandler : ICommandHandler<CapturePayment>
     }
 }
 
-public sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
+internal sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
 {
     public ValueTask HandleAsync(
         OrderPlaced @event,
@@ -24,7 +24,7 @@ public sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
     }
 }
 
-public sealed class GetPaymentStatusHandler
+internal sealed class GetPaymentStatusHandler
     : IRequestHandler<GetPaymentStatus, PaymentStatus>
 {
     public ValueTask<PaymentStatus> HandleAsync(

@@ -12,6 +12,15 @@ internal sealed class ReferencedContributionAnalyzer
     private const string ContributionAttributeMetadataName =
         "TinyBus.BusMessageContributionAttribute";
 
+    // Constructor positions in BusMessageContributionAttribute.
+    private const int ManifestTypeArgument = 0;
+    private const int ContractNameArgument = 1;
+    private const int ContractVersionArgument = 2;
+    private const int MessageTypeArgument = 3;
+    private const int HandlerTypeArgument = 4;
+    private const int KindArgument = 5;
+    private const int ResponseTypeArgument = 6;
+
     public ImmutableArray<ReferencedMessageContribution> Analyze(
         Compilation compilation,
         CancellationToken cancellationToken)
@@ -82,39 +91,48 @@ internal sealed class ReferencedContributionAnalyzer
         AttributeData attribute)
     {
         var arguments = attribute.ConstructorArguments;
-        if (arguments.Length < 6)
+        if (arguments.Length <= KindArgument)
         {
             return null;
         }
 
-        var manifest = arguments[0].Value as ITypeSymbol;
-        var contractName = arguments[1].Value as string;
-        var contractVersion = arguments[2].Value as int?;
-        var message = arguments[3].Value as ITypeSymbol;
-        var handler = arguments[4].Value as ITypeSymbol;
-        var kind = ReadKind(arguments[5]);
+        var manifestType = arguments[ManifestTypeArgument].Value as ITypeSymbol;
+        var contractName = arguments[ContractNameArgument].Value as string;
+        var contractVersion = arguments[ContractVersionArgument].Value as int?;
+        var messageType = arguments[MessageTypeArgument].Value as ITypeSymbol;
+        var handlerType = arguments[HandlerTypeArgument].Value as ITypeSymbol;
+        var kindArgument = arguments[KindArgument];
+        var kind = ReadKind(kindArgument);
 
         if (!HasRequiredMetadata(
-                manifest,
+                manifestType,
                 contractName,
                 contractVersion,
-                message,
-                handler,
+                messageType,
+                handlerType,
                 kind))
         {
             return null;
         }
 
+        var manifestTypeName = Display(manifestType!);
+        var version = contractVersion.GetValueOrDefault();
+        var messageTypeName = Display(messageType!);
+        var messageTypeIdentity = HandlerAnalyzer.ReadMessageTypeIdentity(messageType!);
+        var handlerTypeName = Display(handlerType!);
+        var messageKind = kind.GetValueOrDefault();
+        var responseTypeName = ReadResponseType(arguments);
+
         return new ReferencedMessageContribution(
             assemblyName,
-            Display(manifest!),
+            manifestTypeName,
             contractName!,
-            contractVersion.GetValueOrDefault(),
-            Display(message!),
-            HandlerAnalyzer.ReadMessageTypeIdentity(message!),
-            Display(handler!),
-            kind.GetValueOrDefault(),
-            ReadResponseType(arguments));
+            version,
+            messageTypeName,
+            messageTypeIdentity,
+            handlerTypeName,
+            messageKind,
+            responseTypeName);
     }
 
     private static bool HasRequiredMetadata(
@@ -146,12 +164,12 @@ internal sealed class ReferencedContributionAnalyzer
 
     private static string? ReadResponseType(ImmutableArray<TypedConstant> arguments)
     {
-        if (arguments.Length < 7)
+        if (arguments.Length <= ResponseTypeArgument)
         {
             return null;
         }
 
-        return arguments[6].Value is ITypeSymbol response
+        return arguments[ResponseTypeArgument].Value is ITypeSymbol response
             ? Display(response)
             : null;
     }

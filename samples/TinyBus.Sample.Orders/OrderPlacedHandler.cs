@@ -4,7 +4,7 @@ using TinyBus.Sample.Contracts;
 
 namespace TinyBus.Sample.Orders;
 
-public sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
+internal sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
 {
     public ValueTask HandleAsync(
         OrderPlaced @event,

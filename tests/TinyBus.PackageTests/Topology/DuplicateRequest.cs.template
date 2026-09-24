@@ -1,0 +1,10 @@
+using TinyBus;
+using TinyBus.Sample.Contracts;
+
+internal sealed class DuplicateRequestHandler : IRequestHandler<GetPaymentStatus, PaymentStatus>
+{
+    public ValueTask<PaymentStatus> HandleAsync(GetPaymentStatus request, CancellationToken cancellationToken)
+    {
+        return ValueTask.FromResult(new PaymentStatus(request.PaymentId, "Unknown"));
+    }
+}

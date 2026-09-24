@@ -13,6 +13,12 @@ object-oriented code. Good practices serve the product; they are not an exercise
   before choosing which step to inspect.
 - Keep methods small and focused on one responsibility, without fragmenting a readable flow.
 - Use intention-revealing names, braces, early returns, and whitespace between logical steps.
+- Separate object construction from use: create a collaborator in a named local, then call its
+  methods in a separate statement. Do not chain calls onto `new`, including inside lambdas and
+  return expressions.
+- Do not nest method calls or object construction inside argument lists. Compute each value in a
+  meaningfully named local first, then pass it to the method or constructor. Likewise, prepare
+  values before interpolating them into strings; do not put method calls inside interpolation.
 - Give domain decisions explicit names. A reader should understand why a branch is taken without
   decoding several implementation checks joined by `&&` or `||`. Move those checks behind a
   well-named boolean or small predicate method so the main method reads top down. Keep a compound
@@ -70,6 +76,11 @@ Use the Tiny Suite generators as references, not templates to copy wholesale.
 - `Generation` receives validated definitions and returns source text.
 - Keep generation planning and source emission explicit and independent of Roslyn.
 - Prefer incremental generation and deterministic output.
+- Keep `Analyze`, `Validate` and `Generate` as separate methods, with one coordinator calling them
+  once in order. Analysis covers local and referenced handlers; validation owns both per-handler
+  and topology checks. Report all validation diagnostics before generation: errors prevent the
+  generation call; warnings alone do not. Keep framework registration and input combination outside
+  the coordinator, with named inputs instead of nested `Left`/`Right` access.
 
 Introduce only the phases and types the agreed behavior needs. A phase does not need an interface
 just because it has a name.

@@ -1,0 +1,10 @@
+using TinyBus;
+using TinyBus.Sample.Contracts;
+
+internal sealed class DuplicateCommandHandler : ICommandHandler<CapturePayment>
+{
+    public ValueTask HandleAsync(CapturePayment command, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}

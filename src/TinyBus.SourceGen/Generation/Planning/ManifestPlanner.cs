@@ -20,8 +20,9 @@ internal sealed class ManifestPlanner
 
         var messages = OrderMessages(definitions);
         var referencedManifests = SelectReferencedManifests(contributions);
+        var manifestTypeName = CreateManifestTypeName(assemblyName);
 
-        return new ManifestPlan(CreateManifestTypeName(assemblyName), messages, referencedManifests);
+        return new ManifestPlan(manifestTypeName, messages, referencedManifests);
     }
 
     private static ImmutableArray<MessageHandlerDefinition> OrderMessages(
@@ -48,18 +49,22 @@ internal sealed class ManifestPlanner
 
     private static string CreateManifestTypeName(string assemblyName)
     {
-        var readableName = new string(assemblyName
+        var nameCharacters = assemblyName
             .Select(character => char.IsLetterOrDigit(character) ? character : '_')
-            .ToArray());
+            .ToArray();
+        var readableName = new string(nameCharacters);
+        var suffix = CreateStableSuffix(assemblyName);
 
-        return $"TinyBusManifest_{readableName}_{CreateStableSuffix(assemblyName)}";
+        return $"TinyBusManifest_{readableName}_{suffix}";
     }
 
     private static string CreateStableSuffix(string assemblyName)
     {
         using var algorithm = SHA256.Create();
-        var hash = algorithm.ComputeHash(Encoding.UTF8.GetBytes(assemblyName));
+        var assemblyNameBytes = Encoding.UTF8.GetBytes(assemblyName);
+        var hash = algorithm.ComputeHash(assemblyNameBytes);
+        var suffixBytes = hash.Take(4).Select(value => value.ToString("x2"));
 
-        return string.Concat(hash.Take(4).Select(value => value.ToString("x2")));
+        return string.Concat(suffixBytes);
     }
 }

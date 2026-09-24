@@ -89,36 +89,11 @@ Planned slices:
 5. Combine the composed manifest with an explicitly supplied `ServiceIdentity` to create
    `ServiceTopology`. Implemented, verified and approved.
 6. Prove the behavior with a real host plus multiple handler libraries and a packaged consumer.
+   Implemented, verified and approved.
 
-Slice 3 implementation: the existing internal `GeneratedTinyBusManifest` composes the local public
-manifest with the distinct public manifests identified by referenced contribution attributes.
-Local messages come first; referenced manifests follow in ordinal assembly/type-name order.
-Public manifests and contribution attributes remain assembly-local, so overlapping library
-dependencies do not duplicate messages. Only references available to the root compilation
-participate; composition neither scans assemblies at runtime nor names foreign internal types.
-Four executable multi-assembly tests cover composition, internal request metadata, empty roots,
-stable ordering and shared event handlers. The Release build, all thirty-five solution tests and
-the existing package smoke test pass. Approved by the user's instruction to continue.
-
-Slice 4 implementation: the existing topology diagnostics now include referenced contributions.
-Local handlers receive source diagnostics; conflicts involving referenced handlers also produce
-a compilation-level diagnostic naming participating assemblies and handlers. Ordering is stable
-and overlapping checks do not duplicate source diagnostics. CLR message identity includes its
-assembly and constructed type arguments/elements; handler identity includes its owning assembly.
-Multiple event handlers remain valid. Contract-identity collisions between distinct CLR types are
-outside these existing CLR-message rules. Twelve new test cases pass, including a regression for
-message arrays without declaration locations. The Release build has zero warnings/errors, all
-forty-seven tests pass, and the existing package smoke test passes. Slice 4 was approved by the
-user's instruction to commit and continue with `ServiceTopology` composition.
-
-Slice 5 implementation: the generated root manifest exposes `CreateTopology(ServiceIdentity)`
-and returns the existing `ServiceTopology` containing the supplied identity and all composed
-descriptors. The application supplies identity explicitly on each call; the manifest does not infer
-or retain it. No new abstraction or identity-validation rule is added. Three executable cases
-cover local/referenced composition, a root with only references, an empty topology, internal
-request metadata and independent service identities. The Release build, all fifty tests and the
-existing package smoke test pass. Slice 5 was approved by the user's instruction to commit and
-continue; the real host and packaged multi-library scenario remain slice 6.
+Implementation details, verification and approval history live in [`PLAN.md`](../PLAN.md).
+Multi-assembly topology and the generator refinements are approved. Native handler activation and
+invocation is the next feature to design and slice.
 
 Approved seam:
 

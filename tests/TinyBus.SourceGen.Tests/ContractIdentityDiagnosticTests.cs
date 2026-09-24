@@ -19,10 +19,7 @@ public sealed class ContractIdentityDiagnosticTests
         var diagnostic = Assert.Single(run.Diagnostics);
         Assert.Equal("TBUS001", diagnostic.Id);
         Assert.Equal(expectedLocationText, ReadLocationText(diagnostic));
-        Assert.DoesNotContain(
-            "typeof(global::OrderPlaced)",
-            ReadGeneratedManifest(run),
-            StringComparison.Ordinal);
+        Assert.Empty(Assert.Single(run.Results).GeneratedSources);
     }
 
     [Theory]
@@ -37,10 +34,7 @@ public sealed class ContractIdentityDiagnosticTests
         var diagnostic = Assert.Single(run.Diagnostics);
         Assert.Equal("TBUS002", diagnostic.Id);
         Assert.Equal(version.ToString(), ReadLocationText(diagnostic));
-        Assert.DoesNotContain(
-            "typeof(global::OrderPlaced)",
-            ReadGeneratedManifest(run),
-            StringComparison.Ordinal);
+        Assert.Empty(Assert.Single(run.Results).GeneratedSources);
     }
 
     private static string CreateConsumer(string contractName, string? versionAssignment)
@@ -66,10 +60,5 @@ public sealed class ContractIdentityDiagnosticTests
     {
         var tree = Assert.IsAssignableFrom<SyntaxTree>(diagnostic.Location.SourceTree);
         return tree.GetText().ToString(diagnostic.Location.SourceSpan);
-    }
-
-    private static string ReadGeneratedManifest(GeneratorDriverRunResult run)
-    {
-        return Assert.Single(Assert.Single(run.Results).GeneratedSources).SourceText.ToString();
     }
 }

@@ -278,7 +278,36 @@ multi-assembly topology execution remains slice 6.
 
 Approved by the user's instruction to commit and continue.
 
-### Next slice
+Slice 5 committed as `7780c36`.
 
-Start multi-assembly topology slice 6: prove the composed topology with a real host, multiple
-handler libraries and a packaged consumer.
+### Multi-assembly topology slice 6: host and packaged composition — implemented, verified and approved
+
+`TinyBus.Sample.Host` creates topology with an explicit service identity, one local command and
+the Orders/Payments libraries. Its five descriptors include shared-event handlers and complete
+request/response metadata, with internal library handlers and transitively referenced contracts.
+
+The package smoke test builds an isolated copy of the same four projects using the freshly packed
+NuGet package. It checks ordered host output, compiler-only generator placement, and `TBUS003`,
+`TBUS004` and `TBUS005` failures with referenced-assembly details.
+
+The requested generator refinement keeps both validators inside `Validate` and reports all issues
+before calling `Generate`. Errors now suppress generation; warnings alone do not. Handler analysis
+uses the incremental syntax transform; `Analyze` combines those results with referenced metadata.
+The coordinator retains separate analysis, validation and generation steps. Collaborators are
+constructed before use, and contribution argument positions have explicit names.
+
+Diagnostic tests require zero generated sources on errors and cover simultaneous contract and
+topology errors. After cleanup, the Release build passes with zero warnings/errors, all fifty-one
+tests pass, the sample host runs, and package verification passes its positive and negative cases.
+
+Approved model refinements: `ContractAnalysis` groups the declared
+name, version and their diagnostic locations. `MessageTypeAnalysis` groups the CLR message's display
+name, generated type name and assembly-aware identity. `MessageHandlerAnalysis` now takes six
+arguments, including both concepts. Invalid contract values and value equality are preserved.
+The Release build and all fifty-one tests pass after these refactors.
+
+Slice 6 and the generator refinements were approved by the user's instruction to commit and move on.
+
+### Next feature
+
+Native handler activation and invocation: discuss its behavior and slices before coding.

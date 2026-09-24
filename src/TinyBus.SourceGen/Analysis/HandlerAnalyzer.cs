@@ -57,34 +57,37 @@ internal sealed class HandlerAnalyzer
 
             if (IsHandlerContract(implementedInterface, commandHandler))
             {
-                candidates.Add(CreateAnalysis(
+                var analysis = CreateAnalysis(
                     compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Command,
-                    busContractAttribute));
+                    busContractAttribute);
+                candidates.Add(analysis);
                 continue;
             }
 
             if (IsHandlerContract(implementedInterface, eventHandler))
             {
-                candidates.Add(CreateAnalysis(
+                var analysis = CreateAnalysis(
                     compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Event,
-                    busContractAttribute));
+                    busContractAttribute);
+                candidates.Add(analysis);
                 continue;
             }
 
             if (IsHandlerContract(implementedInterface, requestHandler))
             {
-                candidates.Add(CreateAnalysis(
+                var analysis = CreateAnalysis(
                     compilation,
                     handler,
                     implementedInterface,
                     MessageHandlerKind.Request,
-                    busContractAttribute));
+                    busContractAttribute);
+                candidates.Add(analysis);
             }
         }
 
@@ -116,40 +119,68 @@ internal sealed class HandlerAnalyzer
         var response = kind == MessageHandlerKind.Request
             ? implementedInterface.TypeArguments[1]
             : null;
-        var contractAttribute = FindContractAttribute(message, busContractAttribute);
-        var contractName = ReadContractName(message, contractAttribute);
-        var contractVersion = ReadContractVersion(contractAttribute);
+        var handlerDeclarationLocation = handler.Locations[0];
+        var contract = AnalyzeContract(
+            compilation, message, busContractAttribute, handlerDeclarationLocation);
+
+        var messageType = AnalyzeMessageType(message);
+        var handlerTypeName = handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var responseTypeName = response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        var handlerLocation = SourceLocationReader.Read(compilation, handlerDeclarationLocation);
 
         return new MessageHandlerAnalysis(
-            message.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
-            contractName,
-            contractVersion,
-            message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-            ReadMessageTypeIdentity(message),
-            handler.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            messageType,
+            contract,
+            handlerTypeName,
             kind,
-            response?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-            SourceLocationReader.Read(compilation, handler.Locations[0]),
-            ReadContractNameLocation(compilation, message, contractAttribute, handler.Locations[0]),
-            ReadContractVersionLocation(compilation, message, contractAttribute, handler.Locations[0]));
+            responseTypeName,
+            handlerLocation);
+    }
+
+    private static MessageTypeAnalysis AnalyzeMessageType(ITypeSymbol message)
+    {
+        var displayName = message.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        var typeName = message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var identity = ReadMessageTypeIdentity(message);
+
+        return new MessageTypeAnalysis(displayName, typeName, identity);
+    }
+
+    private static ContractAnalysis AnalyzeContract(
+        Compilation compilation,
+        ITypeSymbol message,
+        INamedTypeSymbol? busContractAttribute,
+        Location handlerLocation)
+    {
+        var attribute = FindContractAttribute(message, busContractAttribute);
+        var name = ReadContractName(message, attribute);
+        var version = ReadContractVersion(attribute);
+        var nameLocation = ReadContractNameLocation(compilation, message, attribute, handlerLocation);
+        var versionLocation = ReadContractVersionLocation(compilation, message, attribute, handlerLocation);
+
+        return new ContractAnalysis(name, version, nameLocation, versionLocation);
     }
 
     internal static string ReadMessageTypeIdentity(ITypeSymbol message)
     {
         if (message is IArrayTypeSymbol array)
         {
-            return $"array:{array.Rank}:{ReadMessageTypeIdentity(array.ElementType)}";
+            var elementIdentity = ReadMessageTypeIdentity(array.ElementType);
+            return $"array:{array.Rank}:{elementIdentity}";
         }
 
         var definition = message.OriginalDefinition;
-        var identity = $"{definition.ContainingAssembly?.Identity}:{definition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}";
+        var definitionTypeName = definition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var identity = $"{definition.ContainingAssembly?.Identity}:{definitionTypeName}";
         if (message is not INamedTypeSymbol named)
         {
             return identity;
         }
 
         // Closed generic arguments and enclosing types can come from different assemblies.
-        var arguments = string.Join(";", named.TypeArguments.Select(ReadMessageTypeIdentity));
+        var argumentIdentities = named.TypeArguments.Select(ReadMessageTypeIdentity);
+        var arguments = string.Join(";", argumentIdentities);
         var containingType = named.ContainingType is null
             ? string.Empty
             : ReadMessageTypeIdentity(named.ContainingType);

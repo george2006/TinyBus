@@ -14,8 +14,11 @@ internal sealed class ManifestGeneration
         ImmutableArray<ReferencedMessageContribution> contributions,
         CancellationToken cancellationToken)
     {
-        var plan = new ManifestPlanner().Create(assemblyName, definitions, contributions, cancellationToken);
-        var source = new ManifestEmitter().Emit(plan, cancellationToken);
+        var planner = new ManifestPlanner();
+        var plan = planner.Create(assemblyName, definitions, contributions, cancellationToken);
+
+        var emitter = new ManifestEmitter();
+        var source = emitter.Emit(plan, cancellationToken);
 
         return ("TinyBus.Generated.Manifest.g.cs", source);
     }

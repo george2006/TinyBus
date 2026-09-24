@@ -15,22 +15,25 @@ internal sealed class MessageHandlerValidator
 
     private static ImmutableArray<MessageIssue> ReadIssues(MessageHandlerAnalysis candidate)
     {
+        var contract = candidate.Contract;
         var issues = ImmutableArray.CreateBuilder<MessageIssue>();
 
-        if (string.IsNullOrWhiteSpace(candidate.ContractName))
+        if (string.IsNullOrWhiteSpace(contract.Name))
         {
-            issues.Add(new MessageIssue(
+            var issue = new MessageIssue(
                 MessageIssueKind.InvalidContractName,
-                candidate.MessageDisplayName,
-                candidate.ContractNameLocation));
+                candidate.MessageType.DisplayName,
+                contract.NameLocation);
+            issues.Add(issue);
         }
 
-        if (candidate.ContractVersion < 1)
+        if (contract.Version < 1)
         {
-            issues.Add(new MessageIssue(
+            var issue = new MessageIssue(
                 MessageIssueKind.InvalidContractVersion,
-                candidate.MessageDisplayName,
-                candidate.ContractVersionLocation));
+                candidate.MessageType.DisplayName,
+                contract.VersionLocation);
+            issues.Add(issue);
         }
 
         return issues.ToImmutable();
@@ -39,9 +42,9 @@ internal sealed class MessageHandlerValidator
     private static MessageHandlerDefinition CreateDefinition(MessageHandlerAnalysis candidate)
     {
         return new MessageHandlerDefinition(
-            candidate.ContractName!,
-            candidate.ContractVersion,
-            candidate.MessageTypeName,
+            candidate.Contract.Name!,
+            candidate.Contract.Version,
+            candidate.MessageType.TypeName,
             candidate.HandlerTypeName,
             candidate.Kind,
             candidate.ResponseTypeName);

@@ -1,0 +1,10 @@
+using TinyBus;
+using TinyBus.Sample.Contracts;
+
+internal sealed class ConflictingEventHandler : IEventHandler<CapturePayment>
+{
+    public ValueTask HandleAsync(CapturePayment message, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}
