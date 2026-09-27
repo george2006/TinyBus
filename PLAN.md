@@ -816,17 +816,30 @@ Approved and committed as `22a39c4`.
 
 ### PostgreSQL transport initialization — implemented, verified and approved
 
-The internal PostgreSqlTransport now owns the provider readiness sequence. Initialization migrates
-the provider schema, reconciles the service topology, loads required command routes, validates that
-every requirement has an owner and only then publishes the immutable CommandRouteCache snapshot.
-No cache becomes visible after a reconciliation conflict or missing route, while successfully
-reconciled additive facts remain durable for a later retry.
+The internal PostgreSqlTransport now owns the provider readiness sequence available today.
+Initialization migrates the provider schema and reconciles the service topology before completing.
+An ownership conflict fails initialization, while successfully reconciled additive facts remain
+durable for a later retry.
 
-Outbound usage discovery remains deferred, so production registration will initially supply an
-empty required-contract set rather than introduce a manually maintained list. Direct transport tests
-against PostgreSQL 17 prove automatic migration plus successful route publication, missing-route
-failure after durable reconciliation, and ownership-conflict failure before cache publication. DI
-registration remains the next slice. All 51 PostgreSQL provider tests pass.
+Command route loading and caching are proven PostgreSQL capabilities but have no production consumer
+until outbound usage discovery and Send exist. The transport therefore does not publish an artificial
+empty cache or maintain a manual requirements list. Direct transport tests against PostgreSQL 17
+prove automatic migration, durable reconciliation and ownership-conflict failure. DI registration
+remains the next slice. All 50 PostgreSQL provider tests pass.
+
+Approved and initially committed as `ed1dd76`. The following provider-registration slice removes
+the premature empty route-cache wiring before registration is committed.
+
+### PostgreSQL provider registration — implemented, verified and approved
+
+Applications can select the provider with `bus.UsePostgreSql(connectionString)`. The extension
+registers one PostgreSqlTransport; TinyBusRuntime remains the only hosted service and awaits the
+complete provider initialization before host startup finishes. It does not register a route cache
+before a production sender and real outbound requirements exist.
+
+A real host test proves that `StartAsync` returns only after migrations and command ownership
+reconciliation. The inbound command becomes durable topology without being incorrectly treated as
+an outbound requirement. All 51 PostgreSQL provider tests pass.
 
 Approved by the user's request to commit and continue.
 

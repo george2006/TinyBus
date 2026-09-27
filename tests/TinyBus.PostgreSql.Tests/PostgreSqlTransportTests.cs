@@ -13,56 +13,25 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
     }
 
     [Fact]
-    public async Task Initialization_migrates_reconciles_and_publishes_required_routes()
+    public async Task Initialization_migrates_and_reconciles_before_completing()
     {
         await DropSchemaAsync();
         var capture = Command("payments.capture");
         var topology = Topology("payments", capture);
-        var requiredContracts = new[] { capture.Contract };
-        var cache = new CommandRouteCache();
-        var transport = CreateTransport(requiredContracts, cache);
+        var transport = CreateTransport();
 
         await transport.InitializeAsync(topology);
 
-        var found = cache.TryResolve(capture.Contract, out var owner);
-        Assert.True(found);
-        Assert.Equal(topology.Service, owner);
-    }
-
-    [Fact]
-    public async Task Missing_required_route_fails_without_publishing_the_cache()
-    {
-        await DropSchemaAsync();
-        var capture = Command("payments.capture");
-        var refund = Command("payments.refund");
-        var topology = Topology("payments", capture);
-        var requiredContracts = new[] { capture.Contract, refund.Contract };
-        var cache = new CommandRouteCache();
-        var transport = CreateTransport(requiredContracts, cache);
-
-        Task Initialize()
-        {
-            var initialization = transport.InitializeAsync(topology);
-            var task = initialization.AsTask();
-
-            return task;
-        }
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(Initialize);
-
-        Assert.Equal(
-            "Required command 'payments.refund' version 1 has no owner.",
-            exception.Message);
-        AssertCacheIsNotInitialized(cache, capture.Contract);
-
         var source = new PostgreSqlCommandRouteSource(postgreSql.ConnectionString);
+        var requiredContracts = new[] { capture.Contract };
         var persistedRoutes = await source.LoadAsync(requiredContracts);
         var persistedRoute = Assert.Single(persistedRoutes);
         Assert.Equal(capture.Contract, persistedRoute.Contract);
+        Assert.Equal(topology.Service, persistedRoute.Service);
     }
 
     [Fact]
-    public async Task Ownership_conflict_fails_before_publishing_the_cache()
+    public async Task Ownership_conflict_fails_initialization()
     {
         await ResetDatabaseAsync();
         var capture = Command("payments.capture");
@@ -70,9 +39,7 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         var checkout = Topology("checkout", capture);
         var reconciler = new PostgreSqlTopologyReconciler(postgreSql.ConnectionString);
         await reconciler.ReconcileAsync(payments);
-        var requiredContracts = new[] { capture.Contract };
-        var cache = new CommandRouteCache();
-        var transport = CreateTransport(requiredContracts, cache);
+        var transport = CreateTransport();
 
         Task Initialize()
         {
@@ -87,17 +54,11 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         Assert.Equal(
             "Command 'payments.capture' version 1 has conflicting owners 'checkout' and 'payments'.",
             exception.Message);
-        AssertCacheIsNotInitialized(cache, capture.Contract);
     }
 
-    private PostgreSqlTransport CreateTransport(
-        IReadOnlyCollection<ContractIdentity> requiredContracts,
-        CommandRouteCache cache)
+    private PostgreSqlTransport CreateTransport()
     {
-        var transport = new PostgreSqlTransport(
-            postgreSql.ConnectionString,
-            requiredContracts,
-            cache);
+        var transport = new PostgreSqlTransport(postgreSql.ConnectionString);
 
         return transport;
     }
@@ -123,19 +84,6 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         await connection.OpenAsync();
 
         return connection;
-    }
-
-    private static void AssertCacheIsNotInitialized(
-        CommandRouteCache cache,
-        ContractIdentity contract)
-    {
-        void Resolve()
-        {
-            cache.TryResolve(contract, out _);
-        }
-
-        var exception = Assert.Throws<InvalidOperationException>(Resolve);
-        Assert.Equal("Command routes have not been initialized.", exception.Message);
     }
 
     private static ServiceTopology Topology(
