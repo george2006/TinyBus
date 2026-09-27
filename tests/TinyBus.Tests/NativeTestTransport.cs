@@ -6,6 +6,8 @@ internal sealed class NativeTestTransport : ITransport
 
     public ServiceTopology? InitializedTopology { get; private set; }
 
+    public MessageEnvelope? SentMessage { get; private set; }
+
     public async ValueTask InitializeAsync(
         ServiceTopology topology,
         CancellationToken cancellationToken = default)
@@ -15,5 +17,15 @@ internal sealed class NativeTestTransport : ITransport
 
         cancellationToken.ThrowIfCancellationRequested();
         InitializedTopology = topology;
+    }
+
+    public ValueTask SendAsync(
+        MessageEnvelope message,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SentMessage = message;
+
+        return ValueTask.CompletedTask;
     }
 }

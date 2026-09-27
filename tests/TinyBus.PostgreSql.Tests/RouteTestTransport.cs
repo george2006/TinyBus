@@ -44,6 +44,13 @@ internal sealed class RouteTestTransport : ITransport
         routeCache.Replace(routes, cancellationToken);
     }
 
+    public ValueTask SendAsync(
+        MessageEnvelope message,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
+    }
+
     private void ValidateRequiredRoutes(IReadOnlyCollection<CommandRoute> routes)
     {
         var availableContracts = new HashSet<ContractIdentity>();

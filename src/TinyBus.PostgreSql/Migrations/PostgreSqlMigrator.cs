@@ -68,7 +68,9 @@ internal sealed class PostgreSqlMigrator
     private static PostgreSqlMigrationCatalog CreateCatalog()
     {
         var createTopology = PostgreSqlMigration001CreateTopology.Create();
-        var catalog = new PostgreSqlMigrationCatalog([createTopology]);
+        var createCommandMessages = PostgreSqlMigration002CreateCommandMessages.Create();
+        var catalog = new PostgreSqlMigrationCatalog(
+            [createTopology, createCommandMessages]);
 
         return catalog;
     }

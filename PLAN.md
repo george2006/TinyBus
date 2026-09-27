@@ -841,7 +841,26 @@ A real host test proves that `StartAsync` returns only after migrations and comm
 reconciliation. The inbound command becomes durable topology without being incorrectly treated as
 an outbound requirement. All 51 PostgreSQL provider tests pass.
 
-Approved by the user's request to commit and continue.
+Approved and committed as `50efc22`.
+
+### Paired command transport acceptance — implemented and verified, awaiting review
+
+Core now defines one transport-neutral command operation:
+`ITransport.SendAsync(MessageEnvelope, CancellationToken)`. The envelope carries message identity,
+contract identity and the already encoded payload; it carries no physical destination. Successful
+completion means that the selected provider has confirmed durable acceptance, not handler execution.
+
+RabbitMQ derives its direct-exchange routing key from the contract, publishes persistent messages
+with publisher confirms and `mandatory: true`, and surfaces an unroutable command as a send failure.
+PostgreSQL migration 002 adds an append-only command message table. Its send statement resolves the
+owner from shared topology and inserts the message in one database operation; zero inserted rows
+means the command has no owner. This proves PostgreSQL does not need CommandRouteCache on the send
+path, while RabbitMQ needs no readable route lookup.
+
+Real provider tests verify durable envelope fields and missing-route failure for both implementations.
+All 53 PostgreSQL tests pass, and both focused RabbitMQ send tests pass. The full RabbitMQ project has
+one pre-existing broker-restart readiness failure: immediately after restart the stream replica may
+still be unavailable. Typed IBus preparation and serialization remain the following slice.
 
 ### Later: outbound requirements from IBus usage — deferred
 

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
@@ -9,6 +11,9 @@ namespace TinyBus.RabbitMq;
 
 internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 {
+    private const string CausationIdHeader = "tinybus-causation-id";
+    private const string ContractVersionHeader = "tinybus-contract-version";
+    private const string HeadersHeader = "tinybus-headers";
     private const string QueueTypeArgument = "x-queue-type";
 
     private readonly Uri connectionUri;
@@ -62,6 +67,31 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         }
 
         await openedConnection.DisposeAsync().ConfigureAwait(false);
+    }
+
+    public async ValueTask SendAsync(
+        MessageEnvelope message,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var openedConnection = GetConnection();
+        var address = CommandAddress.From(message.Contract);
+        var channelOptions = new CreateChannelOptions(
+            publisherConfirmationsEnabled: true,
+            publisherConfirmationTrackingEnabled: true);
+        await using var channel = await openedConnection
+            .CreateChannelAsync(channelOptions, cancellationToken)
+            .ConfigureAwait(false);
+        var properties = CreateProperties(message);
+        var body = Encoding.UTF8.GetBytes(message.Payload);
+
+        await channel.BasicPublishAsync(
+            address.Exchange,
+            address.RoutingKey,
+            mandatory: true,
+            properties,
+            body,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<IConnection> OpenConnectionAsync(
@@ -205,5 +235,54 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         {
             throw new InvalidOperationException("The RabbitMQ transport is already initialized.");
         }
+    }
+
+    private IConnection GetConnection()
+    {
+        if (connection is null)
+        {
+            throw new InvalidOperationException("The RabbitMQ transport has not been initialized.");
+        }
+
+        return connection;
+    }
+
+    private static BasicProperties CreateProperties(MessageEnvelope message)
+    {
+        var headers = CreateHeaders(message);
+        var messageId = message.MessageId.ToString("D");
+        var properties = new BasicProperties
+        {
+            ContentEncoding = "utf-8",
+            ContentType = "application/json",
+            CorrelationId = message.CorrelationId,
+            Headers = headers,
+            MessageId = messageId,
+            Persistent = true,
+            Type = message.Contract.Name
+        };
+
+        return properties;
+    }
+
+    private static IDictionary<string, object?> CreateHeaders(MessageEnvelope message)
+    {
+        var headers = new Dictionary<string, object?>
+        {
+            [ContractVersionHeader] = message.Contract.Version
+        };
+
+        if (message.CausationId is not null)
+        {
+            headers[CausationIdHeader] = message.CausationId;
+        }
+
+        if (message.Headers is not null)
+        {
+            var serializedHeaders = JsonSerializer.Serialize(message.Headers);
+            headers[HeadersHeader] = serializedHeaders;
+        }
+
+        return headers;
     }
 }

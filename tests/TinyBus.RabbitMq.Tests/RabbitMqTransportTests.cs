@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 
@@ -89,6 +90,74 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         await Assert.ThrowsAsync<OperationInterruptedException>(findCheckoutQueue);
     }
 
+    [Fact]
+    public async Task Send_publishes_a_persistent_envelope_to_the_command_owner()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await transport.InitializeAsync(topology);
+        var messageId = Guid.NewGuid();
+        var headers = new Dictionary<string, string> { ["tenant"] = "north" };
+        var envelope = new MessageEnvelope(
+            messageId,
+            capture,
+            "{\"amount\":100}",
+            "correlation-1",
+            "causation-1",
+            headers);
+
+        await transport.SendAsync(envelope);
+
+        await using var connection = await rabbitMq.OpenConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var serviceAddress = ServiceAddress.From(service);
+        var delivery = await channel.BasicGetAsync(serviceAddress.QueueName, autoAck: true);
+        var received = Assert.IsType<BasicGetResult>(delivery);
+        var payload = Encoding.UTF8.GetString(received.Body.Span);
+        var expectedMessageId = messageId.ToString("D");
+        var causationId = ReadHeader(received, "tinybus-causation-id");
+        var serializedHeaders = ReadHeader(received, "tinybus-headers");
+        var receivedHeaders = JsonSerializer.Deserialize<Dictionary<string, string>>(serializedHeaders);
+
+        Assert.Equal(envelope.Payload, payload);
+        Assert.Equal(expectedMessageId, received.BasicProperties.MessageId);
+        Assert.Equal(capture.Name, received.BasicProperties.Type);
+        Assert.Equal(envelope.CorrelationId, received.BasicProperties.CorrelationId);
+        Assert.True(received.BasicProperties.Persistent);
+        Assert.Equal(1, received.BasicProperties.Headers!["tinybus-contract-version"]);
+        Assert.Equal(envelope.CausationId, causationId);
+        Assert.NotNull(receivedHeaders);
+        Assert.Equal("north", receivedHeaders["tenant"]);
+    }
+
+    [Fact]
+    public async Task Send_rejects_an_unroutable_command()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var topology = CreateTopology(service);
+        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await transport.InitializeAsync(topology);
+        var contract = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var messageId = Guid.NewGuid();
+        var envelope = new MessageEnvelope(messageId, contract, "{}");
+
+        Task Send()
+        {
+            var sending = transport.SendAsync(envelope);
+            var task = sending.AsTask();
+
+            return task;
+        }
+
+        await Assert.ThrowsAnyAsync<PublishException>(Send);
+    }
+
     private static async Task PublishAsync(
         IChannel channel,
         CommandAddress address,
@@ -129,6 +198,15 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         ServiceAddress serviceAddress)
     {
         await channel.QueueDeclarePassiveAsync(serviceAddress.QueueName);
+    }
+
+    private static string ReadHeader(BasicGetResult delivery, string name)
+    {
+        var headers = delivery.BasicProperties.Headers;
+        var value = Assert.IsType<byte[]>(headers![name]);
+        var text = Encoding.UTF8.GetString(value);
+
+        return text;
     }
 
     private static ServiceTopology CreateTopology(
