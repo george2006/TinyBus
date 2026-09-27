@@ -884,7 +884,7 @@ designed, preventing runtime and Roslyn from silently producing different wire i
 request/reply deliberately remain unsupported until their transport semantics are implemented.
 Core tests cover serialization, identity, cancellation and registration. Real PostgreSQL and
 RabbitMQ integration tests now traverse host startup, resolved `IBus`, command preparation and
-durable physical acceptance. A true handler E2E follows the receive and settlement slice.
+durable physical acceptance.
 
 ### Incoming message pipeline — generated command execution implemented and approved
 
@@ -972,6 +972,17 @@ Shutdown stops acquisition, passes cancellation to active pipelines, awaits ever
 and abandons attempts that did not finish. Final settlement uses the host `StopAsync` token so the
 host's shutdown deadline remains authoritative. Core behavior tests cover completion, handler
 failure, the concurrency ceiling and cancellation-driven abandonment. All 59 Core tests pass.
+
+### Command handler E2E — implemented, awaiting review
+
+Both provider test applications now use the source-generated `AddTinyBus` overload, manifest,
+handler registration and incoming pipeline. Each starts a real host, sends through `IBus`, receives
+through its real PostgreSQL or RabbitMQ transport, invokes a DI-constructed typed command handler
+and stops only after runtime settlement. PostgreSQL verifies the command row was deleted; RabbitMQ
+verifies no delivery remains in the service queue. The earlier hand-written test manifests and raw
+payload assertions were removed.
+
+All 16 PostgreSQL tests and all 21 RabbitMQ tests pass against real containers.
 
 ### Later: outbound requirements from IBus usage — deferred
 

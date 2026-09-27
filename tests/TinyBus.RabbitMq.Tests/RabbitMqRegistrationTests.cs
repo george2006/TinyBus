@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,6 +7,8 @@ namespace TinyBus.RabbitMq.Tests;
 
 public sealed class RabbitMqRegistrationTests : IClassFixture<RabbitMqFixture>
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+
     private readonly RabbitMqFixture rabbitMq;
 
     public RabbitMqRegistrationTests(RabbitMqFixture rabbitMq)
@@ -17,12 +17,13 @@ public sealed class RabbitMqRegistrationTests : IClassFixture<RabbitMqFixture>
     }
 
     [Fact]
-    public async Task Host_is_ready_for_typed_command_sending()
+    public async Task Sent_command_reaches_its_generated_handler_and_is_acknowledged()
     {
-        const string serviceName = "payments-registration";
+        const string serviceName = "payments-rabbitmq-e2e";
         var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
         var builder = new HostApplicationBuilder(settings);
         builder.Logging.ClearProviders();
+        builder.Services.AddSingleton<RabbitMqCommandReceipt>();
 
         void Configure(TinyBusOptions options)
         {
@@ -30,49 +31,66 @@ public sealed class RabbitMqRegistrationTests : IClassFixture<RabbitMqFixture>
             options.UseRabbitMq(rabbitMq.ConnectionString);
         }
 
-        builder.Services.AddTinyBus<TestManifest>(Configure);
+        builder.Services.AddTinyBus(Configure);
         using var host = builder.Build();
-
         await host.StartAsync();
-
         var bus = host.Services.GetRequiredService<IBus>();
-        var command = new TestCommand(42);
+        var receipt = host.Services.GetRequiredService<RabbitMqCommandReceipt>();
+        var command = new RabbitMqCapturePayment(42);
+
         await bus.SendAsync(command);
-        await using var connection = await rabbitMq.OpenConnectionAsync();
-        var channelOptions = new CreateChannelOptions(
-            publisherConfirmationsEnabled: false,
-            publisherConfirmationTrackingEnabled: false);
-        await using var channel = await connection.CreateChannelAsync(channelOptions);
-        var queueName = "tinybus." + serviceName;
-        var delivery = await channel.BasicGetAsync(queueName, autoAck: true);
-        var receivedMessage = Assert.IsType<BasicGetResult>(delivery);
-        var payload = Encoding.UTF8.GetString(receivedMessage.Body.Span);
-        var receivedCommand = JsonSerializer.Deserialize<TestCommand>(payload);
 
-        Assert.Equal(command, receivedCommand);
+        var handledCommand = await receipt.WaitAsync(TestTimeout);
+        Assert.Equal(command, handledCommand);
+
         await host.StopAsync();
-    }
 
-    private sealed class TestManifest : IBusManifest
+        await using var connection = await rabbitMq.OpenConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var queueName = "tinybus." + serviceName;
+        var remainingDelivery = await channel.BasicGetAsync(queueName, autoAck: true);
+        Assert.Null(remainingDelivery);
+    }
+}
+
+[BusContract("tests.rabbitmq.capture-payment")]
+internal sealed record RabbitMqCapturePayment(int Amount);
+
+internal sealed class RabbitMqCapturePaymentHandler :
+    ICommandHandler<RabbitMqCapturePayment>
+{
+    private readonly RabbitMqCommandReceipt receipt;
+
+    public RabbitMqCapturePaymentHandler(RabbitMqCommandReceipt receipt)
     {
-        private readonly IReadOnlyList<MessageDescriptor> messages;
-
-        public TestManifest()
-        {
-            var contract = new ContractIdentity("payments.registration.capture", 1);
-            var descriptor = new MessageDescriptor(
-                contract,
-                typeof(TestCommand),
-                typeof(TestCommandHandler),
-                MessageKind.Command);
-            messages = new[] { descriptor };
-        }
-
-        public IReadOnlyList<MessageDescriptor> Messages => messages;
+        this.receipt = receipt;
     }
 
-    [BusContract("payments.registration.capture")]
-    private sealed record TestCommand(int Amount);
+    public ValueTask HandleAsync(
+        RabbitMqCapturePayment command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        receipt.Record(command);
 
-    private sealed class TestCommandHandler;
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class RabbitMqCommandReceipt
+{
+    private readonly TaskCompletionSource<RabbitMqCapturePayment> completion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal void Record(RabbitMqCapturePayment command)
+    {
+        completion.TrySetResult(command);
+    }
+
+    internal async Task<RabbitMqCapturePayment> WaitAsync(TimeSpan timeout)
+    {
+        var command = await completion.Task.WaitAsync(timeout);
+
+        return command;
+    }
 }

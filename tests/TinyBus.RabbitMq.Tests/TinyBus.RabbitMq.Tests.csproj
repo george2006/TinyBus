@@ -18,5 +18,8 @@
     <Using Include="TinyBus.RabbitMq" />
     <ProjectReference Include="../../src/TinyBus/TinyBus.csproj" />
     <ProjectReference Include="../../src/TinyBus.RabbitMq/TinyBus.RabbitMq.csproj" />
+    <ProjectReference Include="../../src/TinyBus.SourceGen/TinyBus.SourceGen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

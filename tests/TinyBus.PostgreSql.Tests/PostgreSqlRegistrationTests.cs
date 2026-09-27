@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,6 +7,8 @@ namespace TinyBus.PostgreSql.Tests;
 
 public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixture>
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+
     private readonly PostgreSqlFixture postgreSql;
 
     public PostgreSqlRegistrationTests(PostgreSqlFixture postgreSql)
@@ -16,78 +17,48 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
     }
 
     [Fact]
-    public async Task Host_is_ready_for_typed_command_sending()
+    public async Task Sent_command_reaches_its_generated_handler_and_is_completed()
     {
         await DropSchemaAsync();
-        var scenarioId = Guid.NewGuid();
-        var scenario = scenarioId.ToString("N");
-        var serviceName = "payments-" + scenario;
-        const string contractName = "payments.capture";
         var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
         var builder = new HostApplicationBuilder(settings);
         builder.Logging.ClearProviders();
+        builder.Services.AddSingleton<PostgreSqlCommandReceipt>();
 
         void Configure(TinyBusOptions options)
         {
-            options.Service(serviceName);
+            options.Service("payments-postgresql-e2e");
             options.UsePostgreSql(postgreSql.ConnectionString);
         }
 
-        builder.Services.AddTinyBus<TestManifest>(Configure);
+        builder.Services.AddTinyBus(Configure);
         using var host = builder.Build();
-
         await host.StartAsync();
-
-        var contract = new ContractIdentity(contractName, 1);
         var bus = host.Services.GetRequiredService<IBus>();
-        var command = new TestCommand(42);
-        await bus.SendAsync(command);
-        var owner = await ReadCommandOwnerAsync(contract);
-        var stored = await ReadStoredCommandAsync();
-        var received = JsonSerializer.Deserialize<TestCommand>(stored.Payload);
+        var receipt = host.Services.GetRequiredService<PostgreSqlCommandReceipt>();
+        var command = new PostgreSqlCapturePayment(42);
 
-        Assert.Equal(serviceName, owner);
-        Assert.Equal(serviceName, stored.DestinationService);
-        Assert.Equal(command, received);
+        await bus.SendAsync(command);
+
+        var handledCommand = await receipt.WaitAsync(TestTimeout);
+        Assert.Equal(command, handledCommand);
 
         await host.StopAsync();
+
+        var storedCount = await ReadStoredCommandCountAsync();
+        Assert.Equal(0, storedCount);
     }
 
-    private async Task<string> ReadCommandOwnerAsync(ContractIdentity contract)
+    private async Task<long> ReadStoredCommandCountAsync()
     {
         await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT service_name
-            FROM tinybus.command_owners
-            WHERE contract_name = @contractName
-              AND contract_version = @contractVersion;
-            """;
-        command.Parameters.AddWithValue("contractName", contract.Name);
-        command.Parameters.AddWithValue("contractVersion", contract.Version);
+        command.CommandText = "SELECT count(*) FROM tinybus.command_messages;";
         var result = await command.ExecuteScalarAsync();
-        var serviceName = Assert.IsType<string>(result);
+        var count = Assert.IsType<long>(result);
 
-        return serviceName;
-    }
-
-    private async Task<StoredCommand> ReadStoredCommandAsync()
-    {
-        await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT destination_service, payload
-            FROM tinybus.command_messages;
-            """;
-        await using var reader = await command.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync());
-        var destinationService = reader.GetString(0);
-        var payload = reader.GetString(1);
-        var stored = new StoredCommand(destinationService, payload);
-
-        return stored;
+        return count;
     }
 
     private async Task DropSchemaAsync()
@@ -98,32 +69,46 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         command.CommandText = "DROP SCHEMA IF EXISTS tinybus CASCADE;";
         await command.ExecuteNonQueryAsync();
     }
+}
 
-    private sealed class TestManifest : IBusManifest
+[BusContract("tests.postgresql.capture-payment")]
+internal sealed record PostgreSqlCapturePayment(int Amount);
+
+internal sealed class PostgreSqlCapturePaymentHandler :
+    ICommandHandler<PostgreSqlCapturePayment>
+{
+    private readonly PostgreSqlCommandReceipt receipt;
+
+    public PostgreSqlCapturePaymentHandler(PostgreSqlCommandReceipt receipt)
     {
-        private readonly IReadOnlyList<MessageDescriptor> messages;
-
-        public TestManifest()
-        {
-            const string contractName = "payments.capture";
-            var contract = new ContractIdentity(contractName, 1);
-            var descriptor = new MessageDescriptor(
-                contract,
-                typeof(TestCommand),
-                typeof(TestCommandHandler),
-                MessageKind.Command);
-            messages = new[] { descriptor };
-        }
-
-        public IReadOnlyList<MessageDescriptor> Messages => messages;
+        this.receipt = receipt;
     }
 
-    [BusContract("payments.capture")]
-    private sealed record TestCommand(int Amount);
+    public ValueTask HandleAsync(
+        PostgreSqlCapturePayment command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        receipt.Record(command);
 
-    private sealed class TestCommandHandler;
+        return ValueTask.CompletedTask;
+    }
+}
 
-    private sealed record StoredCommand(
-        string DestinationService,
-        string Payload);
+internal sealed class PostgreSqlCommandReceipt
+{
+    private readonly TaskCompletionSource<PostgreSqlCapturePayment> completion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal void Record(PostgreSqlCapturePayment command)
+    {
+        completion.TrySetResult(command);
+    }
+
+    internal async Task<PostgreSqlCapturePayment> WaitAsync(TimeSpan timeout)
+    {
+        var command = await completion.Task.WaitAsync(timeout);
+
+        return command;
+    }
 }

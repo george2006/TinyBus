@@ -103,6 +103,13 @@ Shutdown stops acquisition, cancels active pipelines, waits for them, and abando
 attempts using the host shutdown token. A handler that ignores cancellation can therefore consume
 the host's shutdown deadline; TinyBus does not terminate application code forcibly.
 
+### Full command journey — implemented, awaiting review
+
+Real PostgreSQL and RabbitMQ hosts prove the same generated application path: `IBus.SendAsync`
+prepares the envelope, the provider accepts and receives it, `TinyBusRuntime` invokes the generated
+pipeline, the typed handler runs through DI, and the provider records completion. The tests verify
+the PostgreSQL row is removed and the RabbitMQ queue has no remaining delivery after host shutdown.
+
 ## Feature order
 
 ### 1. Multi-assembly topology composition
