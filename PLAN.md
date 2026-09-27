@@ -782,7 +782,7 @@ rollback of a failing later migration without losing prior committed history. Au
 startup migration and command ownership reconciliation remain later slices. The Release solution
 build succeeds with no warnings or errors and all 40 PostgreSQL provider tests pass.
 
-Approved by the user's request to commit and continue.
+Approved and committed as `fa56b80`.
 
 ### PostgreSQL command ownership reconciliation — implemented, verified and approved
 
@@ -797,6 +797,20 @@ survives reconstruction of the reconciler, a conflict retains its original owner
 rolls back commands inserted earlier in the same contribution, and concurrent different-service
 claims produce exactly one owner and one rejection. Route loading, provider initialization,
 registration and automatic migration remain later slices. All 44 PostgreSQL provider tests pass.
+
+Approved and committed as `fa56b80`.
+
+### PostgreSQL command route loading — implemented, verified and approved
+
+The internal PostgreSqlCommandRouteSource reads only requested command owners and returns passive
+CommandRoute facts. One parameterized PostgreSQL query joins the ownership table with parallel
+contract-name and version arrays; duplicate requirements are collapsed before I/O and results are
+ordered deterministically. Empty requirements return without opening a database connection.
+
+The source does not decide whether a missing route is an error. Provider initialization will compare
+the returned facts with its required contracts before publishing a CommandRouteCache snapshot. Real
+PostgreSQL 17 tests cover filtered loading, distinct contract versions, duplicate requirements,
+missing routes, empty requirements and cancellation before I/O. All 48 PostgreSQL provider tests pass.
 
 Approved by the user's request to commit and continue.
 
