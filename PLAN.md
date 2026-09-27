@@ -812,6 +812,22 @@ the returned facts with its required contracts before publishing a CommandRouteC
 PostgreSQL 17 tests cover filtered loading, distinct contract versions, duplicate requirements,
 missing routes, empty requirements and cancellation before I/O. All 48 PostgreSQL provider tests pass.
 
+Approved and committed as `22a39c4`.
+
+### PostgreSQL transport initialization — implemented, verified and approved
+
+The internal PostgreSqlTransport now owns the provider readiness sequence. Initialization migrates
+the provider schema, reconciles the service topology, loads required command routes, validates that
+every requirement has an owner and only then publishes the immutable CommandRouteCache snapshot.
+No cache becomes visible after a reconciliation conflict or missing route, while successfully
+reconciled additive facts remain durable for a later retry.
+
+Outbound usage discovery remains deferred, so production registration will initially supply an
+empty required-contract set rather than introduce a manually maintained list. Direct transport tests
+against PostgreSQL 17 prove automatic migration plus successful route publication, missing-route
+failure after durable reconciliation, and ownership-conflict failure before cache publication. DI
+registration remains the next slice. All 51 PostgreSQL provider tests pass.
+
 Approved by the user's request to commit and continue.
 
 ### Later: outbound requirements from IBus usage — deferred
