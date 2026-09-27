@@ -752,7 +752,7 @@ solution build succeeds with no warnings or errors and all 151 tests pass.
 
 Approved and committed as `e4e713f`.
 
-### RabbitMQ provider registration — implemented and verified, awaiting review
+### RabbitMQ provider registration — implemented, verified and approved
 
 Applications can select the provider with `bus.UseRabbitMq(connectionString)`. The extension only
 registers the DI-owned RabbitMqTransport; the common TinyBusRuntime remains the single hosted service
@@ -762,6 +762,43 @@ A real-host RabbitMQ test proves that the service queue already exists when `hos
 returns. Provider-specific workers, sending, receiving and additional RabbitMQ configuration remain
 outside this slice. The Release solution build succeeds with no warnings or errors and all 152 tests
 pass.
+
+Approved and committed as `9dcab2b`.
+
+### PostgreSQL persistence foundation — implemented, verified and approved
+
+TinyBus.PostgreSql depends directly on Npgsql and owns a small internal migration mechanism derived
+from TinyEvents. Migration machinery lives in `Migrations`, while versioned schema changes live in
+its `Migrations` subfolder, matching the TinyEvents provider layout. A session advisory lock
+serializes concurrent migrators. Applied versions, names and
+SHA-256 checksums are stored in `tinybus.schema_migrations`; changed history and provider/database
+version drift fail instead of silently changing an applied migration. Each migration and its history
+entry commit in one transaction.
+
+The first migration creates `tinybus.command_owners`, keyed by contract name and version, with
+database constraints for valid contract, version and service values. Real PostgreSQL 17 tests prove
+fresh and repeated migration, concurrent initialization, checksum drift rejection, and transactional
+rollback of a failing later migration without losing prior committed history. Automatic provider
+startup migration and command ownership reconciliation remain later slices. The Release solution
+build succeeds with no warnings or errors and all 40 PostgreSQL provider tests pass.
+
+Approved by the user's request to commit and continue.
+
+### PostgreSQL command ownership reconciliation — implemented, verified and approved
+
+The internal PostgreSqlTopologyReconciler persists command ownership directly through Npgsql. One
+transaction adds or confirms every command in a ServiceTopology. `ON CONFLICT DO NOTHING` arbitrates
+concurrent claims through the table's primary key; an existing row from the same service is
+idempotent, while a different owner rejects and rolls back the complete contribution. Reconciliation
+never deletes declarations absent from the current manifest.
+
+Real PostgreSQL 17 tests prove same-service rolling replicas preserve newer commands, ownership
+survives reconstruction of the reconciler, a conflict retains its original owner, a later conflict
+rolls back commands inserted earlier in the same contribution, and concurrent different-service
+claims produce exactly one owner and one rejection. Route loading, provider initialization,
+registration and automatic migration remain later slices. All 44 PostgreSQL provider tests pass.
+
+Approved by the user's request to commit and continue.
 
 ### Later: outbound requirements from IBus usage — deferred
 

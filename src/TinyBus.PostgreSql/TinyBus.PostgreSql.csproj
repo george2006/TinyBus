@@ -10,4 +10,7 @@
     <ProjectReference Include="../TinyBus/TinyBus.csproj" />
     <InternalsVisibleTo Include="TinyBus.PostgreSql.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="8.0.9" />
+  </ItemGroup>
 </Project>
