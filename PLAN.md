@@ -957,8 +957,21 @@ topology orchestration contain no schema SQL; migration SQL remains with the mig
 RabbitMQ uses an asynchronous broker consumer rather than repeated `BasicGet` calls. Its prefetch
 and in-memory channel are bounded by maximum capacity. The callback copies the envelope before it
 returns; completion acknowledges its delivery tag and abandonment negatively acknowledges with
-requeue. The common runtime does not consume this seam yet. Its capacity tracking, concurrent
-pipeline execution and agreed shutdown behavior form the next slice.
+requeue.
+
+### Bounded receive runtime — implemented, awaiting review
+
+`TinyBusOptions.MaximumConcurrentMessages` defines one common execution limit and defaults to the
+host processor count. `TinyBusRuntime` tracks active delivery tasks, asks the transport only for
+free capacity, executes each envelope through the generated incoming pipeline and completes or
+abandons its delivery. Handler failures abandon only their own attempt and do not stop other work.
+Settlement failures are logged and left to provider recovery rather than triggering a second,
+potentially ambiguous settlement operation.
+
+Shutdown stops acquisition, passes cancellation to active pipelines, awaits every active execution
+and abandons attempts that did not finish. Final settlement uses the host `StopAsync` token so the
+host's shutdown deadline remains authoritative. Core behavior tests cover completion, handler
+failure, the concurrency ceiling and cancellation-driven abandonment. All 59 Core tests pass.
 
 ### Later: outbound requirements from IBus usage — deferred
 

@@ -1,12 +1,27 @@
+using System.Threading.Channels;
+
 namespace TinyBus.Tests;
 
 internal sealed class NativeTestTransport : ITransport
 {
+    private readonly Channel<ITransportDelivery> incoming =
+        Channel.CreateUnbounded<ITransportDelivery>();
+
     public Task Availability { get; set; } = Task.CompletedTask;
 
     public ServiceTopology? InitializedTopology { get; private set; }
 
     public MessageEnvelope? SentMessage { get; private set; }
+
+    public List<ReceiveCapacity> ReceivedCapacities { get; } = [];
+
+    public void Enqueue(ITransportDelivery delivery)
+    {
+        if (!incoming.Writer.TryWrite(delivery))
+        {
+            throw new InvalidOperationException("The test transport cannot accept the delivery.");
+        }
+    }
 
     public async ValueTask InitializeAsync(
         ServiceTopology topology,
@@ -29,13 +44,21 @@ internal sealed class NativeTestTransport : ITransport
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
+    public async ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
         ReceiveCapacity capacity,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyList<ITransportDelivery> deliveries = Array.Empty<ITransportDelivery>();
+        ReceivedCapacities.Add(capacity);
+        var deliveries = new List<ITransportDelivery>(capacity.Available);
+        var firstDelivery = await incoming.Reader.ReadAsync(cancellationToken);
+        deliveries.Add(firstDelivery);
 
-        return ValueTask.FromResult(deliveries);
+        while (deliveries.Count < capacity.Available
+            && incoming.Reader.TryRead(out var delivery))
+        {
+            deliveries.Add(delivery);
+        }
+
+        return deliveries;
     }
 }

@@ -52,9 +52,11 @@ public sealed class TinyBusRegistrationTests
         var builder = new HostApplicationBuilder(settings);
         builder.Logging.ClearProviders();
         var available = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        builder.Services.AddSingleton<IIncomingMessagePipeline, NoOpIncomingMessagePipeline>();
         builder.Services.AddTinyBus<EmptyManifest>(bus =>
         {
             bus.Service("payments");
+            bus.MaximumConcurrentMessages = 12;
             bus.UseTestTransport();
         });
         using var host = builder.Build();
@@ -73,7 +75,9 @@ public sealed class TinyBusRegistrationTests
         var bus = host.Services.GetRequiredService<IBus>();
         var sameBus = host.Services.GetRequiredService<IBus>();
         var expectedService = new ServiceIdentity("payments");
+        var runtimeSettings = host.Services.GetRequiredService<TinyBusRuntimeSettings>();
         Assert.Equal(expectedService, topology.Service);
+        Assert.Equal(12, runtimeSettings.MaximumConcurrentMessages);
         Assert.Empty(topology.Messages);
         Assert.Same(topology, transport.InitializedTopology);
         Assert.Same(bus, sameBus);
@@ -142,6 +146,27 @@ public sealed class TinyBusRegistrationTests
         Assert.ThrowsAny<ArgumentException>(() =>
             services.AddTinyBus<EmptyManifest>(bus => bus.Service(name!)));
 
+        Assert.Empty(services);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public void Invalid_message_concurrency_leaves_the_service_collection_unchanged(
+        int maximumConcurrentMessages)
+    {
+        var services = new ServiceCollection();
+
+        void RegisterTinyBus()
+        {
+            services.AddTinyBus<EmptyManifest>(bus =>
+            {
+                bus.Service("payments");
+                bus.MaximumConcurrentMessages = maximumConcurrentMessages;
+            });
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(RegisterTinyBus);
         Assert.Empty(services);
     }
 

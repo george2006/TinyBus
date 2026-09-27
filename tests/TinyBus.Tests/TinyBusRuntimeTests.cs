@@ -1,11 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace TinyBus.Tests;
 
 public sealed class TinyBusRuntimeTests
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task Transport_failure_prevents_host_readiness()
     {
@@ -39,7 +42,116 @@ public sealed class TinyBusRuntimeTests
         Assert.False(lifetime.ApplicationStarted.IsCancellationRequested);
     }
 
-    private static IHost CreateHost(ITransport transport)
+    [Fact]
+    public async Task Successful_pipeline_execution_completes_the_delivery()
+    {
+        var transport = new NativeTestTransport();
+        var pipeline = new RecordingPipeline();
+        using var host = CreateHost(transport, pipeline, maximumConcurrentMessages: 4);
+        await host.StartAsync();
+        var envelope = CreateEnvelope();
+        var delivery = new NativeTestDelivery(envelope);
+
+        transport.Enqueue(delivery);
+
+        await delivery.Completed.WaitAsync(TestTimeout);
+        Assert.Same(envelope, pipeline.LastMessage);
+        Assert.False(delivery.Abandoned.IsCompleted);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Pipeline_failure_abandons_the_delivery()
+    {
+        var transport = new NativeTestTransport();
+        var pipelineError = new InvalidOperationException("Handler failed.");
+        var pipeline = new FailingPipeline(pipelineError);
+        using var host = CreateHost(transport, pipeline, maximumConcurrentMessages: 4);
+        await host.StartAsync();
+        var firstEnvelope = CreateEnvelope();
+        var secondEnvelope = CreateEnvelope();
+        var firstDelivery = new NativeTestDelivery(firstEnvelope);
+        var secondDelivery = new NativeTestDelivery(secondEnvelope);
+
+        transport.Enqueue(firstDelivery);
+        await firstDelivery.Abandoned.WaitAsync(TestTimeout);
+        transport.Enqueue(secondDelivery);
+
+        await secondDelivery.Abandoned.WaitAsync(TestTimeout);
+        Assert.False(firstDelivery.Completed.IsCompleted);
+        Assert.False(secondDelivery.Completed.IsCompleted);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Runtime_never_executes_more_than_the_configured_capacity()
+    {
+        var transport = new NativeTestTransport();
+        var pipeline = new BlockingPipeline();
+        using var host = CreateHost(transport, pipeline, maximumConcurrentMessages: 2);
+        await host.StartAsync();
+        var firstEnvelope = CreateEnvelope();
+        var secondEnvelope = CreateEnvelope();
+        var thirdEnvelope = CreateEnvelope();
+        var first = new NativeTestDelivery(firstEnvelope);
+        var second = new NativeTestDelivery(secondEnvelope);
+        var third = new NativeTestDelivery(thirdEnvelope);
+        transport.Enqueue(first);
+        transport.Enqueue(second);
+        transport.Enqueue(third);
+
+        await pipeline.WaitForExecutionAsync(TestTimeout);
+        await pipeline.WaitForExecutionAsync(TestTimeout);
+        var thirdStartedEarly = await pipeline.WaitForExecutionAsync(
+            TimeSpan.FromMilliseconds(100));
+
+        Assert.False(thirdStartedEarly);
+        Assert.Equal(2, pipeline.MaximumObservedConcurrency);
+        var expectedInitialCapacity = new ReceiveCapacity(2, 2);
+        Assert.Equal(expectedInitialCapacity, transport.ReceivedCapacities[0]);
+
+        pipeline.ReleaseOne();
+
+        await pipeline.WaitForExecutionAsync(TestTimeout);
+        var expectedAvailableCapacity = new ReceiveCapacity(2, 1);
+        Assert.Contains(expectedAvailableCapacity, transport.ReceivedCapacities);
+
+        pipeline.Release(2);
+
+        var deliveryCompletions = new[]
+        {
+            first.Completed,
+            second.Completed,
+            third.Completed
+        };
+        var completions = Task.WhenAll(deliveryCompletions);
+        await completions.WaitAsync(TestTimeout);
+        Assert.Equal(2, pipeline.MaximumObservedConcurrency);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task Shutdown_cancels_active_execution_and_abandons_its_delivery()
+    {
+        var transport = new NativeTestTransport();
+        var pipeline = new BlockingPipeline();
+        using var host = CreateHost(transport, pipeline, maximumConcurrentMessages: 1);
+        await host.StartAsync();
+        var envelope = CreateEnvelope();
+        var delivery = new NativeTestDelivery(envelope);
+        transport.Enqueue(delivery);
+        await pipeline.WaitForExecutionAsync(TestTimeout);
+
+        await host.StopAsync();
+
+        await delivery.Abandoned.WaitAsync(TestTimeout);
+        Assert.False(delivery.Completed.IsCompleted);
+    }
+
+    private static IHost CreateHost(
+        ITransport transport,
+        IIncomingMessagePipeline? pipeline = null,
+        int? maximumConcurrentMessages = null)
     {
         var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
         var builder = new HostApplicationBuilder(settings);
@@ -47,9 +159,126 @@ public sealed class TinyBusRuntimeTests
         var service = new ServiceIdentity("payments");
         var messages = Array.Empty<MessageDescriptor>();
         var topology = new ServiceTopology(service, messages);
-        var runtime = new TinyBusRuntime(transport, topology);
+        var incomingPipeline = pipeline ?? new NoOpIncomingMessagePipeline();
+        var maximumConcurrency = maximumConcurrentMessages ?? Environment.ProcessorCount;
+        var runtimeSettings = new TinyBusRuntimeSettings(maximumConcurrency);
+        var logger = NullLogger<TinyBusRuntime>.Instance;
+        var runtime = new TinyBusRuntime(
+            transport,
+            topology,
+            incomingPipeline,
+            runtimeSettings,
+            logger);
         builder.Services.AddSingleton<IHostedService>(runtime);
 
         return builder.Build();
+    }
+
+    private static MessageEnvelope CreateEnvelope()
+    {
+        var messageId = Guid.NewGuid();
+        var contract = new ContractIdentity("payments.capture", 1);
+        var envelope = new MessageEnvelope(messageId, contract, "{}");
+
+        return envelope;
+    }
+
+    private sealed class RecordingPipeline : IIncomingMessagePipeline
+    {
+        internal MessageEnvelope? LastMessage { get; private set; }
+
+        public ValueTask ExecuteAsync(
+            MessageEnvelope message,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastMessage = message;
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailingPipeline : IIncomingMessagePipeline
+    {
+        private readonly Exception exception;
+
+        internal FailingPipeline(Exception exception)
+        {
+            this.exception = exception;
+        }
+
+        public ValueTask ExecuteAsync(
+            MessageEnvelope message,
+            CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromException(exception);
+        }
+    }
+
+    private sealed class BlockingPipeline : IIncomingMessagePipeline
+    {
+        private readonly SemaphoreSlim executions = new(0);
+        private readonly SemaphoreSlim releases = new(0);
+        private int activeExecutions;
+        private int maximumObservedConcurrency;
+
+        internal int MaximumObservedConcurrency => Volatile.Read(
+            ref maximumObservedConcurrency);
+
+        internal void ReleaseOne()
+        {
+            releases.Release();
+        }
+
+        internal void Release(int count)
+        {
+            releases.Release(count);
+        }
+
+        internal async Task<bool> WaitForExecutionAsync(TimeSpan timeout)
+        {
+            return await executions.WaitAsync(timeout);
+        }
+
+        public async ValueTask ExecuteAsync(
+            MessageEnvelope message,
+            CancellationToken cancellationToken = default)
+        {
+            var active = Interlocked.Increment(ref activeExecutions);
+            RecordMaximumConcurrency(active);
+            executions.Release();
+
+            try
+            {
+                await releases.WaitAsync(cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeExecutions);
+            }
+        }
+
+        private void RecordMaximumConcurrency(int active)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref maximumObservedConcurrency);
+
+                if (active <= current)
+                {
+                    return;
+                }
+
+                var previous = Interlocked.CompareExchange(
+                    ref maximumObservedConcurrency,
+                    active,
+                    current);
+
+                if (previous == current)
+                {
+                    return;
+                }
+            }
+        }
     }
 }

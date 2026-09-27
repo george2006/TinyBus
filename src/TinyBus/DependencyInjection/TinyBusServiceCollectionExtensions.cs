@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace TinyBus;
 
@@ -27,7 +28,9 @@ public static class TinyBusServiceCollectionExtensions
 
         var manifest = new TManifest();
         var topology = new ServiceTopology(options.ServiceIdentity, manifest.Messages);
+        var runtimeSettings = new TinyBusRuntimeSettings(options.MaximumConcurrentMessages);
         registrations.AddSingleton(topology);
+        registrations.AddSingleton(runtimeSettings);
         registrations.AddSingleton<IBus>(CreateBus);
         registrations.AddSingleton<IHostedService>(CreateRuntime);
 
@@ -60,7 +63,15 @@ public static class TinyBusServiceCollectionExtensions
     {
         var transport = ResolveTransport(services);
         var topology = services.GetRequiredService<ServiceTopology>();
-        var runtime = new TinyBusRuntime(transport, topology);
+        var pipeline = services.GetRequiredService<IIncomingMessagePipeline>();
+        var settings = services.GetRequiredService<TinyBusRuntimeSettings>();
+        var logger = services.GetRequiredService<ILogger<TinyBusRuntime>>();
+        var runtime = new TinyBusRuntime(
+            transport,
+            topology,
+            pipeline,
+            settings,
+            logger);
 
         return runtime;
     }

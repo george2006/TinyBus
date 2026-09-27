@@ -161,7 +161,7 @@ public interface ITransportDelivery
 `ITransport.ReceiveAsync(ReceiveCapacity, CancellationToken)` returns at most `Available`
 deliveries. Abandonment currently means make the delivery recoverable again. The runtime will stop
 acquiring on shutdown, cancel and await active handlers, and abandon work that did not complete.
-That runtime orchestration is the next slice.
+That runtime orchestration is now implemented with one configurable common concurrency limit.
 
 ## Earlier transport contract exploration
 

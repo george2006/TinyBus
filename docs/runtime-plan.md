@@ -89,7 +89,19 @@ native push consumption with bounded prefetch and buffering. Completion deletes 
 abandonment releases or requeues. Retry delays, attempt limits, poison handling and PostgreSQL lease
 renewal are deferred. PostgreSQL currently waits through cancellable 250 ms polling when no work is
 available; provider configuration and notification-based wake-up remain later work. `TinyBusRuntime`
-orchestration and shutdown consume this seam in the next slice.
+now consumes this seam as described below.
+
+### Bounded receive runtime — implemented, awaiting review
+
+`TinyBusOptions.MaximumConcurrentMessages` is the single common execution limit. The runtime derives
+available slots from active executions and passes both values to the selected transport. Every
+delivery runs independently through `IIncomingMessagePipeline`; success completes it and pipeline
+failure abandons it. Settlement errors are logged and provider recovery remains responsible for
+redelivery.
+
+Shutdown stops acquisition, cancels active pipelines, waits for them, and abandons incomplete
+attempts using the host shutdown token. A handler that ignores cancellation can therefore consume
+the host's shutdown deadline; TinyBus does not terminate application code forcibly.
 
 ## Feature order
 

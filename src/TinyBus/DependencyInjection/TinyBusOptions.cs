@@ -8,6 +8,8 @@ namespace TinyBus;
 /// </summary>
 public sealed class TinyBusOptions
 {
+    private int maximumConcurrentMessages = Environment.ProcessorCount;
+
     internal TinyBusOptions(IServiceCollection services)
     {
         Services = services;
@@ -20,6 +22,26 @@ public sealed class TinyBusOptions
     public IServiceCollection Services { get; }
 
     internal ServiceIdentity ServiceIdentity { get; private set; }
+
+    public int MaximumConcurrentMessages
+    {
+        get
+        {
+            return maximumConcurrentMessages;
+        }
+
+        set
+        {
+            if (value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(MaximumConcurrentMessages),
+                    "Maximum concurrent messages must be greater than zero.");
+            }
+
+            maximumConcurrentMessages = value;
+        }
+    }
 
     public void Service(string name)
     {
