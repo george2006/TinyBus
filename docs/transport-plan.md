@@ -1,24 +1,21 @@
 # Transport and command runtime plan
 
-Status: the first in-memory topology slice is implemented, verified and approved.
-The second slice's public reconciliation/loading seams are implemented, verified and approved.
-The third slice's reusable ownership validation is implemented, verified and approved.
-The subsequent correction keeps CommandRoute passive and moves checks to their owning boundaries;
-that correction is approved. The original TopologyWorker proved startup readiness through route
-loading; the provider comparison has now replaced it with one common TinyBusRuntime and the semantic
-ITransport initialization seam.
-Application registration is also implemented, verified and approved. Outbound usage discovery is
-explicitly deferred; registration must not require a manually maintained outbound-command list.
-Production transport send/receive contracts remain proposals. Native activation is complete
-at `ef1180d`.
+Status: the first complete command journey is implemented, verified and approved at `e3f0368`.
+Application registration, additive topology reconciliation, provider readiness, typed command
+sending, bounded reception, generated middleware and handler execution, and provider settlement are
+connected end to end in PostgreSQL and RabbitMQ.
 
-Latest routing decision: RabbitMQ uses deterministic contract-to-exchange/routing-key mapping and
-service queue bindings. Route lookup and caching are PostgreSQL capabilities, not unconditional
-runtime requirements. The old ITopologyReconciler and ICommandRouteSource seams are removed;
-CommandRoute and CommandRouteCache are internal to TinyBus.PostgreSql. Readable ownership metadata,
-if needed, is a private RabbitMQ
-mechanism; Management API is not part of the core operational contract. AddTinyBus no longer creates
-a route cache or requires a route source. Historical slice descriptions below describe the earlier code.
+One common TinyBusRuntime owns startup and message execution. Each host selects exactly one
+ITransport; the provider owns its physical routing, acquisition and settlement mechanics. RabbitMQ
+uses deterministic contract addressing and native broker routing. PostgreSQL resolves ownership
+inside its durable command insert, so the obsolete CommandRoute, CommandRouteCache and route source
+have been removed. Management API and readable route discovery are not core requirements.
+
+The runtime passes current execution capacity to the provider. PostgreSQL claims bounded batches;
+RabbitMQ uses bounded prefetch and buffering. Successful handlers complete their delivery and failed
+handlers abandon only their own attempt. Real-provider tests prove the complete command path and
+settlement. Retry schedules, poison handling, PostgreSQL lease renewal, event delivery and Native AOT
+proof remain future slices. Historical descriptions below preserve the decisions that led here.
 
 ## Goal
 
@@ -508,26 +505,17 @@ without partial changes. All 135 Release tests pass. Provider projects TinyBus.P
 TinyBus.RabbitMq are present in the solution as requested, with no transport implementation yet.
 The user approved the registration hook and project scaffolding by requesting a commit and continuation.
 
-## Paired provider topology proof — in progress
+## Paired provider topology proof — implemented, verified and approved
 
-The first paired slice should implement registration, additive topology reconciliation and routing
-preparation against real PostgreSQL and RabbitMQ instances. Apply the same behavioral checks to each:
-same-service replica idempotency, conflicting owners including concurrent claims, preservation of
-newer declarations after older-replica reconciliation and persistent facts
-after recreating the provider. Each application host selects one provider.
-Filtered route reads are tested for cache-using providers; RabbitMQ tests contract-derived addressing
-and bindings without requiring an ownership lookup in the sender.
+Real PostgreSQL and RabbitMQ implementations prove same-service replica idempotency, conflicting
+ownership including concurrent claims, preservation of declarations introduced by newer replicas,
+and durable reconstruction. Each provider owns its topology representation and physical routing;
+neither depends on the other's storage or operational capabilities.
 
-Before implementation, agree ownership representation and discovery in each adapter. RabbitMQ
-direct exchanges route a matching key to one or more queues, so bindings alone do not enforce
-TinyBus's unique command-owner invariant. This is a design inference from
-[RabbitMQ exchange routing](https://www.rabbitmq.com/docs/exchanges).
-The RabbitMQ adapter must remain usable without PostgreSQL. PostgreSQL transactions and RabbitMQ
-management/resources stay private to their respective adapters. Partial reconciliation failure
-must be specified honestly; the sequential accumulator's guarantees are not distributed guarantees.
-
-Provider selection hooks are ready, but UsePostgreSql/UseRabbitMq and their configuration contracts
-await real provider implementation. The first paired slice's design must pass the common-seam review.
+The paired implementation also proved that command routing does not require one universal route
+model. PostgreSQL validates ownership in its database operations. RabbitMQ derives addresses from
+contract identity and uses its topology journal to validate ownership before binding a service queue.
+The common runtime depends only on provider initialization and transport behavior.
 
 ### Provider-specific readiness seam — implemented, verified and approved
 

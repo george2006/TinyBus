@@ -1,5 +1,27 @@
 # TinyBus plan
 
+## Current checkpoint — command journey complete
+
+The first complete command journey is implemented, verified and approved as of `e3f0368`.
+Both PostgreSQL and RabbitMQ now exercise the same application path from `IBus.SendAsync` through
+durable transport acceptance, bounded reception, the generated incoming middleware pipeline, a
+DI-constructed typed handler and provider-specific settlement.
+
+The runtime owns one configurable concurrency limit and passes current capacity to the selected
+transport. PostgreSQL claims bounded batches with expiring ownership; RabbitMQ combines bounded
+prefetch with a bounded in-memory channel. Handler failures affect only their own delivery and make
+it recoverable. Shutdown stops acquisition, cancels and awaits active handlers, and abandons work
+that did not complete.
+
+Release verification at this checkpoint passes with no warnings or errors. The focused suites pass
+with 59 Core tests, 16 PostgreSQL tests and 21 RabbitMQ tests. The working tree was clean when the
+checkpoint was committed.
+
+The next feature is deliberately undecided. Before implementation, discuss and slice one concrete
+direction: delivery retries and poison handling, PostgreSQL lease renewal for long-running handlers,
+or durable event delivery with an independent outcome per consumer. Native AOT remains an
+architectural target until generated JSON metadata and published provider applications prove it.
+
 ## Bootstrap feature
 
 Prove the core model before introducing distributed infrastructure:
@@ -132,7 +154,7 @@ between assemblies.
 
 Approved and committed as `a8c1938`.
 
-### Slice 9: packaged developer experience — implemented, awaiting review
+### Slice 9: packaged developer experience — implemented, verified and approved
 
 The `TinySuite.TinyBus` package now carries `TinyBus.SourceGen.dll` as a compiler-only analyzer and
 contains its README. A package smoke test creates a unique local package, inspects its assets and
@@ -668,37 +690,22 @@ project contains no placeholder tests before provider behavior exists. Release b
 pass. Package verification passes
 for both packaged consumers and the expected diagnostic cases.
 
-### Current: paired provider topology proof — in progress
+### Paired provider topology proof — implemented, verified and approved
 
-Take one agreed behavior through PostgreSQL and RabbitMQ before adding the next. Start with provider
-registration, additive topology reconciliation and provider-appropriate routing. Exercise the same invariants
-against real infrastructure: replicas are idempotent, different command owners are rejected, older
-replicas preserve newer declarations, and topology survives provider recreation.
+The two providers prove the same topology invariants against real infrastructure: replicas are
+idempotent, different command owners are rejected, older replicas preserve declarations introduced
+by newer replicas, and ownership survives provider reconstruction. Each host selects exactly one
+provider.
 
-Before implementation, agree each provider's ownership and routing representation, including
-concurrent claims. RabbitMQ bindings alone do not establish unique command ownership. Keep PostgreSQL
-rows and RabbitMQ resources private to their adapters; RabbitMQ must not require PostgreSQL to operate.
-Do not expand this proof into send/receive, retries or an outbox yet. The shared contract review and
-approval remain required before implementing either provider.
+RabbitMQ derives physical addresses from contract identity and validates ownership through its
+durable topology journal before installing service bindings. PostgreSQL persists ownership in its
+own schema and resolves it atomically while accepting a command. Provider resources and concurrency
+mechanics remain private to each adapter. Core requires safe initialization and command transport
+behavior without imposing a shared route-cache model.
 
-The user corrected the RabbitMQ design: derive the exchange/routing key deterministically from the
-command contract and let the owning service bind its queue. Do not require a command route cache
-or Management API lookup for that path. If readable ownership metadata is necessary, keep its
-mechanism small and RabbitMQ-specific; Management API is not part of the core operational contract.
-
-The previous proposal requiring both providers to implement ICommandRouteSource is withdrawn.
-PostgreSQL can retain local ownership lookup where needed. The common send boundary should let
-the provider route from the envelope's contract, rather than requiring a service destination from
-core. That signature and the exact startup refactor remain to be reviewed before code changes.
-
-Broker topology readiness does not prove every remote command has an owner; unroutable sends need
-explicit failure handling.
-
-**Routing != ownership validation.** Unique command ownership remains required. Bindings alone do
-not enforce it, so separately design and prove the RabbitMQ conflict check without making ownership
-reads a prerequisite for routing.
-The revised comparison is in docs/transport-plan.md. RabbitMQ command ownership now has the real
-topology-journal proof below. PostgreSQL persistence and provider routing preparation remain.
+**Routing != ownership validation.** That distinction remains a core design invariant. The
+provider-specific implementations and their progression are recorded below and in
+`docs/transport-plan.md`.
 
 ### RabbitMQ command addressing — implemented and verified
 
@@ -911,7 +918,7 @@ Message context, middleware, provider acquisition and settlement, worker capacit
 policy remain separate reviewable slices. `TinyBusRuntime` does not consume the pipeline until the
 transport receive contract is agreed.
 
-### Incoming middleware pipeline — implemented and awaiting review
+### Incoming middleware pipeline — implemented, verified and approved
 
 Concrete middleware opts in through `[IncomingMiddleware(order)]` and implements
 `IIncomingMessageMiddleware`. The generator validates declarations and unique order values, emits
@@ -934,7 +941,7 @@ general `JsonSerializer` APIs. Generated `JsonSerializerContext` metadata, trim-
 and published PostgreSQL and RabbitMQ verification are required before TinyBus claims Native AOT
 support.
 
-### Transport acquisition and settlement — implemented, awaiting review
+### Transport acquisition and settlement — implemented, verified and approved
 
 The single `ITransport` provider seam now receives bounded work through `ReceiveCapacity`. Core
 supplies both total and currently available capacity: PostgreSQL limits each claim to available
@@ -959,7 +966,7 @@ and in-memory channel are bounded by maximum capacity. The callback copies the e
 returns; completion acknowledges its delivery tag and abandonment negatively acknowledges with
 requeue.
 
-### Bounded receive runtime — implemented, awaiting review
+### Bounded receive runtime — implemented, verified and approved
 
 `TinyBusOptions.MaximumConcurrentMessages` defines one common execution limit and defaults to the
 host processor count. `TinyBusRuntime` tracks active delivery tasks, asks the transport only for
@@ -973,7 +980,7 @@ and abandons attempts that did not finish. Final settlement uses the host `StopA
 host's shutdown deadline remains authoritative. Core behavior tests cover completion, handler
 failure, the concurrency ceiling and cancellation-driven abandonment. All 59 Core tests pass.
 
-### Command handler E2E — implemented, awaiting review
+### Command handler E2E — implemented, verified and approved
 
 Both provider test applications now use the source-generated `AddTinyBus` overload, manifest,
 handler registration and incoming pipeline. Each starts a real host, sends through `IBus`, receives

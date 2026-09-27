@@ -55,7 +55,7 @@ explicit; publishing from a handler does not itself guarantee atomicity or exact
 Design this before stabilizing the handler API. Context and publishing remain future intent and
 do not change the handler signatures in the current registration slice.
 
-### Middleware pipeline — first slice implemented, awaiting review
+### Middleware pipeline — first slice implemented, verified and approved
 
 `IIncomingMessagePipeline` remains the runtime boundary for processing an envelope. Concrete
 middleware opts in with `[IncomingMiddleware(order)]` and implements `IIncomingMessageMiddleware`.
@@ -78,7 +78,7 @@ strong AOT shape. It is not yet an AOT guarantee: message serialization currentl
 `JsonSerializer` APIs. Add generated JSON metadata, audit trimming and provider dependencies, and
 publish and run one AOT application per provider before declaring support.
 
-### Bounded transport reception — provider slice implemented, awaiting review
+### Bounded transport reception — provider slice implemented, verified and approved
 
 `ReceiveCapacity` communicates total processing capacity and currently available slots without
 exposing provider mechanics. `ITransport.ReceiveAsync` returns no more than the available count.
@@ -91,7 +91,7 @@ renewal are deferred. PostgreSQL currently waits through cancellable 250 ms poll
 available; provider configuration and notification-based wake-up remain later work. `TinyBusRuntime`
 now consumes this seam as described below.
 
-### Bounded receive runtime — implemented, awaiting review
+### Bounded receive runtime — implemented, verified and approved
 
 `TinyBusOptions.MaximumConcurrentMessages` is the single common execution limit. The runtime derives
 available slots from active executions and passes both values to the selected transport. Every
@@ -103,7 +103,7 @@ Shutdown stops acquisition, cancels active pipelines, waits for them, and abando
 attempts using the host shutdown token. A handler that ignores cancellation can therefore consume
 the host's shutdown deadline; TinyBus does not terminate application code forcibly.
 
-### Full command journey — implemented, awaiting review
+### Full command journey — implemented, verified and approved
 
 Real PostgreSQL and RabbitMQ hosts prove the same generated application path: `IBus.SendAsync`
 prepares the envelope, the provider accepts and receives it, `TinyBusRuntime` invokes the generated
