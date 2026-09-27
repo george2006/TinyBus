@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,7 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
     }
 
     [Fact]
-    public async Task Host_starts_after_schema_and_topology_are_ready()
+    public async Task Host_is_ready_for_typed_command_sending()
     {
         await DropSchemaAsync();
         var scenarioId = Guid.NewGuid();
@@ -38,9 +39,16 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         await host.StartAsync();
 
         var contract = new ContractIdentity(contractName, 1);
+        var bus = host.Services.GetRequiredService<IBus>();
+        var command = new TestCommand(42);
+        await bus.SendAsync(command);
         var owner = await ReadCommandOwnerAsync(contract);
+        var stored = await ReadStoredCommandAsync();
+        var received = JsonSerializer.Deserialize<TestCommand>(stored.Payload);
 
         Assert.Equal(serviceName, owner);
+        Assert.Equal(serviceName, stored.DestinationService);
+        Assert.Equal(command, received);
 
         await host.StopAsync();
     }
@@ -62,6 +70,24 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         var serviceName = Assert.IsType<string>(result);
 
         return serviceName;
+    }
+
+    private async Task<StoredCommand> ReadStoredCommandAsync()
+    {
+        await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT destination_service, payload
+            FROM tinybus.command_messages;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var destinationService = reader.GetString(0);
+        var payload = reader.GetString(1);
+        var stored = new StoredCommand(destinationService, payload);
+
+        return stored;
     }
 
     private async Task DropSchemaAsync()
@@ -92,7 +118,12 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         public IReadOnlyList<MessageDescriptor> Messages => messages;
     }
 
-    private sealed record TestCommand;
+    [BusContract("payments.capture")]
+    private sealed record TestCommand(int Amount);
 
     private sealed class TestCommandHandler;
+
+    private sealed record StoredCommand(
+        string DestinationService,
+        string Payload);
 }

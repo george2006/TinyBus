@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,11 +17,9 @@ public sealed class RabbitMqRegistrationTests : IClassFixture<RabbitMqFixture>
     }
 
     [Fact]
-    public async Task Host_starts_after_the_service_queue_is_ready()
+    public async Task Host_is_ready_for_typed_command_sending()
     {
-        var scenarioId = Guid.NewGuid();
-        var scenario = scenarioId.ToString("N");
-        var serviceName = "payments-" + scenario;
+        const string serviceName = "payments-registration";
         var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
         var builder = new HostApplicationBuilder(settings);
         builder.Logging.ClearProviders();
@@ -30,24 +30,49 @@ public sealed class RabbitMqRegistrationTests : IClassFixture<RabbitMqFixture>
             options.UseRabbitMq(rabbitMq.ConnectionString);
         }
 
-        builder.Services.AddTinyBus<EmptyManifest>(Configure);
+        builder.Services.AddTinyBus<TestManifest>(Configure);
         using var host = builder.Build();
 
         await host.StartAsync();
 
+        var bus = host.Services.GetRequiredService<IBus>();
+        var command = new TestCommand(42);
+        await bus.SendAsync(command);
         await using var connection = await rabbitMq.OpenConnectionAsync();
         var channelOptions = new CreateChannelOptions(
             publisherConfirmationsEnabled: false,
             publisherConfirmationTrackingEnabled: false);
         await using var channel = await connection.CreateChannelAsync(channelOptions);
         var queueName = "tinybus." + serviceName;
+        var delivery = await channel.BasicGetAsync(queueName, autoAck: true);
+        var receivedMessage = Assert.IsType<BasicGetResult>(delivery);
+        var payload = Encoding.UTF8.GetString(receivedMessage.Body.Span);
+        var receivedCommand = JsonSerializer.Deserialize<TestCommand>(payload);
 
-        await channel.QueueDeclarePassiveAsync(queueName);
+        Assert.Equal(command, receivedCommand);
         await host.StopAsync();
     }
 
-    private sealed class EmptyManifest : IBusManifest
+    private sealed class TestManifest : IBusManifest
     {
-        public IReadOnlyList<MessageDescriptor> Messages { get; } = Array.Empty<MessageDescriptor>();
+        private readonly IReadOnlyList<MessageDescriptor> messages;
+
+        public TestManifest()
+        {
+            var contract = new ContractIdentity("payments.registration.capture", 1);
+            var descriptor = new MessageDescriptor(
+                contract,
+                typeof(TestCommand),
+                typeof(TestCommandHandler),
+                MessageKind.Command);
+            messages = new[] { descriptor };
+        }
+
+        public IReadOnlyList<MessageDescriptor> Messages => messages;
     }
+
+    [BusContract("payments.registration.capture")]
+    private sealed record TestCommand(int Amount);
+
+    private sealed class TestCommandHandler;
 }

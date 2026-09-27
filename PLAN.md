@@ -871,6 +871,21 @@ provider startup tests now verify the persisted ownership fact directly. TinyBus
 provider-independent startup tests in Core. The remaining 13 PostgreSQL provider tests and all 45
 Core tests pass.
 
+### Typed command sending — approved, implemented and verified
+
+The internal Bus now implements `IBus.SendAsync<TCommand>` by resolving the contract identity,
+serializing the command as JSON, creating a new envelope and forwarding it to the selected transport.
+Contract resolution is cached per command type. Explicit `BusContractAttribute` identities include
+their declared version; ordinary message types retain the fully-qualified CLR name and version 1.
+Generic and array messages require an explicit contract name until outbound generator metadata is
+designed, preventing runtime and Roslyn from silently producing different wire identities.
+
+`IBus` is registered once and shares the provider selected by the runtime. Event publication and
+request/reply deliberately remain unsupported until their transport semantics are implemented.
+Core tests cover serialization, identity, cancellation and registration. Real PostgreSQL and
+RabbitMQ integration tests now traverse host startup, resolved `IBus`, command preparation and
+durable physical acceptance. A true handler E2E follows the receive and settlement slice.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete

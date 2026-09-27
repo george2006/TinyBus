@@ -70,10 +70,13 @@ public sealed class TinyBusRegistrationTests
         await starting;
 
         var topology = host.Services.GetRequiredService<ServiceTopology>();
+        var bus = host.Services.GetRequiredService<IBus>();
+        var sameBus = host.Services.GetRequiredService<IBus>();
         var expectedService = new ServiceIdentity("payments");
         Assert.Equal(expectedService, topology.Service);
         Assert.Empty(topology.Messages);
         Assert.Same(topology, transport.InitializedTopology);
+        Assert.Same(bus, sameBus);
         var workers = host.Services.GetServices<IHostedService>();
         Assert.Single(workers);
         await host.StopAsync();

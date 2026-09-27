@@ -28,6 +28,7 @@ public static class TinyBusServiceCollectionExtensions
         var manifest = new TManifest();
         var topology = new ServiceTopology(options.ServiceIdentity, manifest.Messages);
         registrations.AddSingleton(topology);
+        registrations.AddSingleton<IBus>(CreateBus);
         registrations.AddSingleton<IHostedService>(CreateRuntime);
 
         ApplyRegistrations(services, registrations);
@@ -62,6 +63,14 @@ public static class TinyBusServiceCollectionExtensions
         var runtime = new TinyBusRuntime(transport, topology);
 
         return runtime;
+    }
+
+    private static IBus CreateBus(IServiceProvider services)
+    {
+        var transport = ResolveTransport(services);
+        var bus = new Bus(transport);
+
+        return bus;
     }
 
     private static ITransport ResolveTransport(IServiceProvider services)
