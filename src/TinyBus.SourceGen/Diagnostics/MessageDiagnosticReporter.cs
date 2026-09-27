@@ -41,6 +41,7 @@ internal static class MessageDiagnosticReporter
             MessageIssueKind.DuplicateCommandHandler => MessageDiagnostics.DuplicateCommandHandler,
             MessageIssueKind.DuplicateRequestHandler => MessageDiagnostics.DuplicateRequestHandler,
             MessageIssueKind.ConflictingMessageSemantics => MessageDiagnostics.ConflictingMessageSemantics,
+            MessageIssueKind.AmbiguousContractIdentity => MessageDiagnostics.AmbiguousContractIdentity,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown TinyBus diagnostic.")
         };
     }

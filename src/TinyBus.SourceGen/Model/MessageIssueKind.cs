@@ -6,5 +6,6 @@ internal enum MessageIssueKind
     InvalidContractVersion,
     DuplicateCommandHandler,
     DuplicateRequestHandler,
-    ConflictingMessageSemantics
+    ConflictingMessageSemantics,
+    AmbiguousContractIdentity
 }

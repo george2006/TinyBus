@@ -122,11 +122,30 @@ public sealed class ReferencedTopologyDiagnosticTests
         Assert.Single(run.Diagnostics.Where(diagnostic => diagnostic.Location == Location.None));
     }
 
+    [Fact]
+    public void Rejects_a_contract_identity_shared_by_different_referenced_message_types()
+    {
+        var alpha = CompileLibrary(
+            "Alpha",
+            ContractHandler("AlphaMessages", "CapturePayment"));
+        var beta = CompileLibrary(
+            "Beta",
+            ContractHandler("BetaMessages", "LegacyCapturePayment"));
+
+        var run = RunRoot(new[] { alpha, beta });
+
+        var diagnostic = Assert.Single(run.Diagnostics);
+        Assert.Equal("TBUS006", diagnostic.Id);
+        Assert.Equal(Location.None, diagnostic.Location);
+        Assert.Contains("Alpha::global::AlphaMessages.CapturePayment", diagnostic.GetMessage());
+        Assert.Contains("Beta::global::BetaMessages.LegacyCapturePayment", diagnostic.GetMessage());
+    }
+
     [Theory]
     [InlineData("global::Messages.Payload")]
     [InlineData("global::Messages.Payload[]")]
     [InlineData("global::Contracts.Envelope<global::Messages.Payload>")]
-    public void Does_not_confuse_message_types_with_the_same_name_from_different_assemblies(string messageType)
+    public void Rejects_homonymous_message_types_with_the_same_conventional_contract(string messageType)
     {
         var contracts = CompileLibrary("Contracts", Contracts);
         var source = Handler("Command", messageType: messageType) + """
@@ -144,10 +163,12 @@ public sealed class ReferencedTopologyDiagnosticTests
             }
             """);
 
-        var run = SourceGeneratorTestHost.Run(root);
+        var run = SourceGeneratorTestHost.Run(root, assertCompilationSucceeds: false);
 
-        Assert.Empty(run.Diagnostics);
-        Assert.Equal(2, SourceGeneratorTestHost.Execute<int>(root, references));
+        var diagnostic = Assert.Single(run.Diagnostics);
+        Assert.Equal("TBUS006", diagnostic.Id);
+        Assert.Equal(Location.None, diagnostic.Location);
+        Assert.Empty(Assert.Single(run.Results).GeneratedSources);
     }
 
     [Fact]
@@ -216,6 +237,28 @@ public sealed class ReferencedTopologyDiagnosticTests
                 {
                     public {{returnType}} HandleAsync({{messageType}} message, CancellationToken cancellationToken)
                         => {{result}};
+                }
+            }
+            """;
+    }
+
+    private static string ContractHandler(string messageNamespace, string messageName)
+    {
+        return $$"""
+            using System.Threading;
+            using System.Threading.Tasks;
+            using TinyBus;
+
+            namespace {{messageNamespace}}
+            {
+                [BusContract("payments.capture")]
+                public sealed record {{messageName}};
+
+                internal sealed class Handler : ICommandHandler<{{messageName}}>
+                {
+                    public ValueTask HandleAsync(
+                        {{messageName}} command,
+                        CancellationToken cancellationToken) => ValueTask.CompletedTask;
                 }
             }
             """;

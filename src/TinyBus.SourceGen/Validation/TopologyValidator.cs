@@ -24,9 +24,128 @@ internal sealed class TopologyValidator
         AddDuplicateCommandHandlerIssues(issues, handlers, cancellationToken);
         AddDuplicateRequestHandlerIssues(issues, handlers, cancellationToken);
         AddConflictingSemanticsIssues(issues, handlers, cancellationToken);
+        AddAmbiguousContractIdentityIssues(
+            issues, assemblyName, handlers, contributions, cancellationToken);
         AddReferencedIssues(issues, assemblyName, handlers, contributions, cancellationToken);
 
         return issues.Distinct().ToImmutableArray();
+    }
+
+    private static void AddAmbiguousContractIdentityIssues(
+        ImmutableArray<MessageIssue>.Builder issues,
+        string assemblyName,
+        ImmutableArray<MessageHandlerAnalysis> handlers,
+        ImmutableArray<ReferencedMessageContribution> contributions,
+        CancellationToken cancellationToken)
+    {
+        var localContracts = handlers.Select(ReadContractKey);
+        var referencedContracts = contributions.Select(ReadContractKey);
+        var contracts = localContracts
+            .Concat(referencedContracts)
+            .Distinct()
+            .OrderBy(contract => contract.Name, StringComparer.Ordinal)
+            .ThenBy(contract => contract.Version);
+
+        foreach (var contract in contracts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var localMessages = handlers
+                .Where(handler => ReadContractKey(handler) == contract)
+                .ToImmutableArray();
+            var referencedMessages = contributions
+                .Where(contribution => ReadContractKey(contribution) == contract)
+                .ToImmutableArray();
+            var messageIdentities = localMessages.Select(message => message.MessageType.Identity)
+                .Concat(referencedMessages.Select(message => message.MessageTypeIdentity))
+                .Distinct(StringComparer.Ordinal)
+                .ToImmutableArray();
+
+            if (messageIdentities.Length < 2)
+            {
+                continue;
+            }
+
+            AddLocalContractIdentityIssues(
+                issues, assemblyName, contract, localMessages, referencedMessages);
+            AddReferencedContractIdentityIssue(
+                issues, assemblyName, contract, localMessages, referencedMessages);
+        }
+    }
+
+    private static void AddLocalContractIdentityIssues(
+        ImmutableArray<MessageIssue>.Builder issues,
+        string assemblyName,
+        ContractKey contract,
+        ImmutableArray<MessageHandlerAnalysis> localMessages,
+        ImmutableArray<ReferencedMessageContribution> referencedMessages)
+    {
+        var details = ReadContractMessageDetails(
+            assemblyName, localMessages, referencedMessages);
+        var contractDisplayName = contract.DisplayName;
+        var distinctMessages = localMessages
+            .GroupBy(message => message.MessageType.Identity, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(message => message.MessageType.DisplayName, StringComparer.Ordinal);
+
+        foreach (var message in distinctMessages)
+        {
+            var issue = new MessageIssue(
+                MessageIssueKind.AmbiguousContractIdentity,
+                contractDisplayName,
+                message.Contract.NameLocation,
+                details);
+            issues.Add(issue);
+        }
+    }
+
+    private static void AddReferencedContractIdentityIssue(
+        ImmutableArray<MessageIssue>.Builder issues,
+        string assemblyName,
+        ContractKey contract,
+        ImmutableArray<MessageHandlerAnalysis> localMessages,
+        ImmutableArray<ReferencedMessageContribution> referencedMessages)
+    {
+        if (referencedMessages.IsEmpty)
+        {
+            return;
+        }
+
+        var details = ReadContractMessageDetails(
+            assemblyName, localMessages, referencedMessages);
+        var issue = new MessageIssue(
+            MessageIssueKind.AmbiguousContractIdentity,
+            contract.DisplayName,
+            location: null,
+            handlerDetails: details);
+        issues.Add(issue);
+    }
+
+    private static string ReadContractMessageDetails(
+        string assemblyName,
+        ImmutableArray<MessageHandlerAnalysis> localMessages,
+        ImmutableArray<ReferencedMessageContribution> referencedMessages)
+    {
+        var localTypes = localMessages.Select(message =>
+            $"{assemblyName}::{message.MessageType.TypeName}");
+        var referencedTypes = referencedMessages.Select(message =>
+            $"{message.AssemblyName}::{message.MessageTypeName}");
+        var messageTypes = localTypes
+            .Concat(referencedTypes)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(messageType => messageType, StringComparer.Ordinal);
+        var participants = string.Join(", ", messageTypes);
+
+        return $". Message types: {participants}";
+    }
+
+    private static ContractKey ReadContractKey(MessageHandlerAnalysis handler)
+    {
+        return new ContractKey(handler.Contract.Name!, handler.Contract.Version);
+    }
+
+    private static ContractKey ReadContractKey(ReferencedMessageContribution contribution)
+    {
+        return new ContractKey(contribution.ContractName, contribution.ContractVersion);
     }
 
     private static void AddDuplicateCommandHandlerIssues(
@@ -238,5 +357,46 @@ internal sealed class TopologyValidator
             location: null,
             handlerDetails: handlerDetails);
         issues.Add(referencedIssue);
+    }
+
+    private readonly struct ContractKey : IEquatable<ContractKey>
+    {
+        internal ContractKey(string name, int version)
+        {
+            Name = name;
+            Version = version;
+        }
+
+        internal string Name { get; }
+
+        internal int Version { get; }
+
+        internal string DisplayName => $"'{Name}' version {Version}";
+
+        public bool Equals(ContractKey other)
+        {
+            return string.Equals(Name, other.Name, StringComparison.Ordinal)
+                && Version == other.Version;
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is ContractKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return (Name, Version).GetHashCode();
+        }
+
+        public static bool operator ==(ContractKey left, ContractKey right)
+        {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(ContractKey left, ContractKey right)
+        {
+            return !left.Equals(right);
+        }
     }
 }

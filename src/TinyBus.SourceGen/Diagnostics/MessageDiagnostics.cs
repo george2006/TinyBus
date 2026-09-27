@@ -43,4 +43,12 @@ internal static class MessageDiagnostics
         "TinyBus",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousContractIdentity = new(
+        "TBUS006",
+        "Contract identity is ambiguous",
+        "Contract {0} identifies multiple message types{1}",
+        "TinyBus",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

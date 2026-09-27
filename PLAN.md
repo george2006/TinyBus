@@ -886,6 +886,20 @@ Core tests cover serialization, identity, cancellation and registration. Real Po
 RabbitMQ integration tests now traverse host startup, resolved `IBus`, command preparation and
 durable physical acceptance. A true handler E2E follows the receive and settlement slice.
 
+### Incoming message pipeline — design in progress
+
+The incoming pipeline starts with `MessageEnvelope`, not a typed command. Generated code selects
+one branch by `ContractIdentity`; only that branch deserializes the payload and invokes the typed
+executor. Core will manage available processing capacity, while providers acquire work efficiently:
+PostgreSQL claims a batch no larger than the currently free capacity and RabbitMQ uses bounded
+prefetch. Each returned delivery still owns an independent settlement and lease or acknowledgement.
+
+The first prerequisite hardens topology validation. `TBUS006` now rejects one contract name and
+version identifying distinct CLR message types, including conflicts contributed by referenced
+assemblies. Without this invariant a generated envelope switch would contain an ambiguous branch.
+All 57 source-generator tests pass. Generated envelope dispatch, message context, middleware,
+provider acquisition, worker capacity and failure policy remain separate reviewable slices.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete

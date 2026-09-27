@@ -83,6 +83,45 @@ public sealed class HandlerTopologyDiagnosticTests
         AssertDiagnostics(run, "TBUS005", "Handler");
     }
 
+    [Fact]
+    public void Rejects_one_contract_identity_for_different_message_types()
+    {
+        var run = SourceGeneratorTestHost.RunWithDiagnostics("""
+            using System.Threading;
+            using System.Threading.Tasks;
+            using TinyBus;
+
+            [BusContract("payments.capture")]
+            public sealed record CapturePayment;
+
+            [BusContract("payments.capture")]
+            public sealed record LegacyCapturePayment;
+
+            public sealed class CaptureHandler : ICommandHandler<CapturePayment>
+            {
+                public ValueTask HandleAsync(
+                    CapturePayment command,
+                    CancellationToken cancellationToken) => ValueTask.CompletedTask;
+            }
+
+            public sealed class LegacyHandler : ICommandHandler<LegacyCapturePayment>
+            {
+                public ValueTask HandleAsync(
+                    LegacyCapturePayment command,
+                    CancellationToken cancellationToken) => ValueTask.CompletedTask;
+            }
+            """);
+
+        Assert.Equal(2, run.Diagnostics.Length);
+        Assert.All(run.Diagnostics, diagnostic =>
+        {
+            Assert.Equal("TBUS006", diagnostic.Id);
+            Assert.Contains("CapturePayment", diagnostic.GetMessage());
+            Assert.Contains("LegacyCapturePayment", diagnostic.GetMessage());
+        });
+        Assert.Empty(Assert.Single(run.Results).GeneratedSources);
+    }
+
     private static void AssertDiagnostics(
         GeneratorDriverRunResult run,
         string expectedId,
