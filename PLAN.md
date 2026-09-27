@@ -886,7 +886,7 @@ Core tests cover serialization, identity, cancellation and registration. Real Po
 RabbitMQ integration tests now traverse host startup, resolved `IBus`, command preparation and
 durable physical acceptance. A true handler E2E follows the receive and settlement slice.
 
-### Incoming message pipeline — design in progress
+### Incoming message pipeline — generated command execution implemented and approved
 
 The incoming pipeline starts with `MessageEnvelope`, not a typed command. Generated code selects
 one branch by `ContractIdentity`; only that branch deserializes the payload and invokes the typed
@@ -894,11 +894,22 @@ executor. Core will manage available processing capacity, while providers acquir
 PostgreSQL claims a batch no larger than the currently free capacity and RabbitMQ uses bounded
 prefetch. Each returned delivery still owns an independent settlement and lease or acknowledgement.
 
-The first prerequisite hardens topology validation. `TBUS006` now rejects one contract name and
+The first prerequisite hardened topology validation. `TBUS006` rejects one contract name and
 version identifying distinct CLR message types, including conflicts contributed by referenced
 assemblies. Without this invariant a generated envelope switch would contain an ambiguous branch.
-All 57 source-generator tests pass. Generated envelope dispatch, message context, middleware,
-provider acquisition, worker capacity and failure policy remain separate reviewable slices.
+
+The first execution slice adds `IIncomingMessagePipeline` as the runtime-to-generated-code boundary.
+The generated root pipeline owns one asynchronous dependency-injection scope per envelope, selects
+the command by contract identity and delegates to the owning assembly manifest. That manifest
+deserializes its own message type and invokes `CommandExecutor`, allowing internal command and
+handler types to work across assembly boundaries without reflection or delegate maps. Unknown
+contracts fail before handler execution. Local, referenced-internal and unknown-command behavior is
+covered by executable generator tests; all 61 source-generator tests pass. Manifest and incoming
+pipeline code are emitted as separate generated files so each artifact keeps one responsibility.
+
+Message context, middleware, provider acquisition and settlement, worker capacity and failure
+policy remain separate reviewable slices. `TinyBusRuntime` does not consume the pipeline until the
+transport receive contract is agreed.
 
 ### Later: outbound requirements from IBus usage — deferred
 

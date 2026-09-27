@@ -116,11 +116,14 @@ public sealed class PortableContributionGenerationTests
         var run = SourceGeneratorTestHost.RunForAssembly(
             assemblyName,
             "public sealed class EmptyConsumer;");
-        var source = Assert.Single(Assert.Single(run.Results).GeneratedSources)
-            .SourceText
-            .ToString();
-        const string declaration = "    public sealed class ";
-        var line = source.Split('\n').Single(value => value.StartsWith(declaration));
+        var generated = SourceGeneratorTestHost.GetGeneratedSource(
+            run,
+            "TinyBus.Generated.Manifest.g.cs");
+        var source = generated.SourceText.ToString();
+        const string declaration = "    public sealed partial class ";
+        var line = source.Split('\n').Single(value =>
+            value.StartsWith(declaration)
+            && value.Contains(": global::TinyBus.IBusManifest"));
 
         return line.Substring(declaration.Length).Split(' ')[0];
     }

@@ -58,8 +58,9 @@ do not change the handler signatures in the current registration slice.
 ### Middleware pipeline — future work
 
 TinyBus will need middleware around handler execution. Design a smaller pipeline than
-TinyDispatcher's when there is a concrete middleware use case; the current registration slice
-introduces no pipeline API, continuation object or middleware registrations.
+TinyDispatcher's when there is a concrete middleware use case. `IIncomingMessagePipeline` is the
+runtime boundary for processing an envelope; it does not define middleware composition. The current
+execution slice introduces no continuation object or middleware registrations.
 
 Before implementation, agree ordering, short-circuiting, scope ownership, exceptions and
 cancellation, and how the pipeline surrounds event handlers and acknowledgement boundaries.

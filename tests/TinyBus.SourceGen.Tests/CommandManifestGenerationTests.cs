@@ -45,7 +45,9 @@ public sealed class CommandManifestGenerationTests
     public void Emits_one_manifest_that_compiles()
     {
         var run = SourceGeneratorTestHost.Run(Consumer);
-        var generated = Assert.Single(Assert.Single(run.Results).GeneratedSources);
+        var generated = SourceGeneratorTestHost.GetGeneratedSource(
+            run,
+            "TinyBus.Generated.Manifest.g.cs");
 
         Assert.Equal("TinyBus.Generated.Manifest.g.cs", generated.HintName);
         Assert.Contains(

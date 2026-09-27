@@ -119,6 +119,10 @@ public sealed class ManifestGenerationTests
     private static string ReadGeneratedManifest(params string[] sources)
     {
         var run = SourceGeneratorTestHost.Run(sources);
-        return Assert.Single(Assert.Single(run.Results).GeneratedSources).SourceText.ToString();
+        var generated = SourceGeneratorTestHost.GetGeneratedSource(
+            run,
+            "TinyBus.Generated.Manifest.g.cs");
+
+        return generated.SourceText.ToString();
     }
 }

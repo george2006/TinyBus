@@ -60,6 +60,18 @@ internal static class SourceGeneratorTestHost
         return Execute<T>(compilation);
     }
 
+    public static GeneratedSourceResult GetGeneratedSource(
+        GeneratorDriverRunResult run,
+        string hintName)
+    {
+        var result = Assert.Single(run.Results);
+        var source = Assert.Single(
+            result.GeneratedSources,
+            generated => generated.HintName == hintName);
+
+        return source;
+    }
+
     public static T Execute<T>(CSharpCompilation compilation, params byte[][] referencedAssemblies)
     {
         using var stream = new MemoryStream(CompileImage(compilation));

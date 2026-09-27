@@ -38,9 +38,9 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
             return;
         }
 
-        var manifest = Generate(
+        var sources = Generate(
             analysis.AssemblyName, validation.Definitions, analysis.Contributions, cancellationToken);
-        WriteManifest(output, manifest);
+        WriteSources(output, sources);
     }
 
     private static (
@@ -78,22 +78,26 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
         return (definitions, issues);
     }
 
-    private static (string HintName, string Source) Generate(
+    private static ImmutableArray<(string HintName, string Source)> Generate(
         string assemblyName,
         ImmutableArray<MessageHandlerDefinition> definitions,
         ImmutableArray<ReferencedMessageContribution> contributions,
         CancellationToken cancellationToken)
     {
-        var generation = new ManifestGeneration();
+        var generation = new SourceGeneration();
         return generation.Generate(assemblyName, definitions, contributions, cancellationToken);
     }
 
-    private static void WriteManifest(
+    private static void WriteSources(
         SourceProductionContext output,
-        (string HintName, string Source) manifest)
+        ImmutableArray<(string HintName, string Source)> sources)
     {
-        var source = SourceText.From(manifest.Source, Encoding.UTF8);
-        output.AddSource(manifest.HintName, source);
+        foreach (var generated in sources)
+        {
+            output.CancellationToken.ThrowIfCancellationRequested();
+            var source = SourceText.From(generated.Source, Encoding.UTF8);
+            output.AddSource(generated.HintName, source);
+        }
     }
 
     private static ImmutableArray<MessageValidationResult> ValidateHandlers(

@@ -50,6 +50,13 @@ internal sealed class ManifestEmitter
         writer.WriteLine();
         writer.WriteLine("global::TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);");
         writer.WriteLine();
+        writer.WriteLine("var pipelineRegistration = global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<");
+        writer.Indent();
+        writer.WriteLine("global::TinyBus.IIncomingMessagePipeline,");
+        writer.WriteLine("global::TinyBus.Generated.GeneratedIncomingMessagePipeline>();");
+        writer.Unindent();
+        writer.WriteLine("services.Add(pipelineRegistration);");
+        writer.WriteLine();
         writer.WriteLine("return services;");
         writer.Unindent();
         writer.WriteLine("}");
@@ -104,7 +111,7 @@ internal sealed class ManifestEmitter
         ManifestPlan plan,
         CancellationToken cancellationToken)
     {
-        writer.WriteLine($"public sealed class {plan.ManifestTypeName} : global::TinyBus.IBusManifest");
+        writer.WriteLine($"public sealed partial class {plan.ManifestTypeName} : global::TinyBus.IBusManifest");
         writer.WriteLine("{");
         writer.Indent();
 

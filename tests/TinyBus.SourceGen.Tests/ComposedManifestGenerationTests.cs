@@ -169,7 +169,11 @@ public sealed class ComposedManifestGenerationTests
     private static string ReadGeneratedSource(CSharpCompilation compilation)
     {
         var run = SourceGeneratorTestHost.Run(compilation);
-        return Assert.Single(Assert.Single(run.Results).GeneratedSources).SourceText.ToString();
+        var generated = SourceGeneratorTestHost.GetGeneratedSource(
+            run,
+            "TinyBus.Generated.Manifest.g.cs");
+
+        return generated.SourceText.ToString();
     }
 
     private static string EventHandler(string assemblyName)
