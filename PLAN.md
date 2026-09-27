@@ -640,7 +640,7 @@ resolve the provider-seam review below.
 
 Provider registration and project scaffolding committed as `387c07c`.
 
-### Provider-specific startup seam — implemented and verified, awaiting review
+### Provider-specific startup seam — implemented, verified and approved
 
 CommandRouteCache and ICommandRouteSource are provider capabilities, not unconditional runtime
 requirements. AddTinyBus no longer creates a cache or requires a route source. The internal
@@ -668,7 +668,7 @@ project contains no placeholder tests before provider behavior exists. Release b
 pass. Package verification passes
 for both packaged consumers and the expected diagnostic cases.
 
-### Following: paired provider topology proof — proposed, awaiting agreement
+### Current: paired provider topology proof — in progress
 
 Take one agreed behavior through PostgreSQL and RabbitMQ before adding the next. Start with provider
 registration, additive topology reconciliation and provider-appropriate routing. Exercise the same invariants
@@ -697,7 +697,8 @@ explicit failure handling.
 **Routing != ownership validation.** Unique command ownership remains required. Bindings alone do
 not enforce it, so separately design and prove the RabbitMQ conflict check without making ownership
 reads a prerequisite for routing.
-The revised comparison is in docs/transport-plan.md. No provider code or real experiment has run.
+The revised comparison is in docs/transport-plan.md. RabbitMQ command ownership now has the real
+topology-journal proof below. PostgreSQL persistence and provider routing preparation remain.
 
 ### RabbitMQ command addressing — implemented and verified
 
@@ -710,6 +711,27 @@ The exact mapping is locked by a compatibility test. Additional tests prove name
 culture independence, boundary handling and invalid-identity rejection. Addressing remains routing
 mechanics and does not establish ownership. No RabbitMQ client, broker declaration, ownership metadata
 or Core API was added. All 145 tests pass.
+
+### RabbitMQ topology journal proof — implemented, verified and approved
+
+TinyBus.RabbitMq now has a concrete RabbitMqTopologyJournal backed by one durable `tinybus.topology`
+RabbitMQ stream. A versioned provider-owned declaration records one service and all command contracts
+it owns. Replaying declarations in broker order produces a deterministic topology: the first accepted
+owner wins, replicas of that service remain idempotent, later declarations add facts, and absence
+never removes them. A declaration containing any conflicting command is rejected as a whole, so none
+of its otherwise-unowned commands leak into the accepted topology.
+
+The journal uses publisher confirms, consumes from the first stream offset and waits until its own
+declaration has been reduced before returning. A conflict therefore fails provider initialization
+before command bindings can be installed. The durable JSON shape is owned and versioned by the
+RabbitMQ package rather than inheriting Core model property names.
+
+Real RabbitMQ 4.2 Testcontainers checks prove rolling-replica preservation, whole-declaration
+rejection, deterministic concurrent ownership, reconstruction through a new connection and
+ownership survival across a broker restart. This proof does not yet register ITransport, declare
+service queues or command bindings. It appends one declaration per reconciliation; avoiding
+unbounded journal growth requires an agreed snapshot or compaction policy before production use.
+All 149 tests pass.
 
 ### Later: outbound requirements from IBus usage — deferred
 

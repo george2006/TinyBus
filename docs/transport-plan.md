@@ -484,7 +484,7 @@ without partial changes. All 135 Release tests pass. Provider projects TinyBus.P
 TinyBus.RabbitMq are present in the solution as requested, with no transport implementation yet.
 The user approved the registration hook and project scaffolding by requesting a commit and continuation.
 
-## Paired provider topology proof — next design discussion
+## Paired provider topology proof — in progress
 
 The first paired slice should implement registration, additive topology reconciliation and routing
 preparation against real PostgreSQL and RabbitMQ instances. Apply the same behavioral checks to each:
@@ -505,7 +505,7 @@ must be specified honestly; the sequential accumulator's guarantees are not dist
 Provider selection hooks are ready, but UsePostgreSql/UseRabbitMq and their configuration contracts
 await real provider implementation. The first paired slice's design must pass the common-seam review.
 
-### Provider-specific readiness seam — implemented and verified, awaiting review
+### Provider-specific readiness seam — implemented, verified and approved
 
 The shared startup invariant is:
 
@@ -556,6 +556,31 @@ independence, version distinction and the 255-byte routing-key bound documented 
 envelope; the address neither stores nor validates the command owner. Exchange declaration, bindings,
 ownership enforcement and send acceptance remain unimplemented.
 
+#### RabbitMQ topology journal proof — implemented, verified and approved
+
+RabbitMQ command delivery keeps one durable input queue per service. The `tinybus.commands` direct
+exchange binds every command routing key owned by that service to the same queue. Ownership is
+validated separately before those bindings are installed.
+
+The ownership proof uses one durable `tinybus.topology` stream as the provider's additive control
+plane. Each versioned record contains a declaration identity, service identity and the complete set
+of commands declared by that service. Every replica folds the same append order. A declaration is
+accepted only when every command is unowned or already belongs to that service; otherwise the whole
+record is rejected without contributing any command. The first accepted owner therefore wins a
+concurrent claim, same-service replicas are idempotent and an older replica cannot remove newer facts.
+
+RabbitMqTopologyJournal starts replay at the first available offset, publishes through a confirmed
+channel and waits until the declaration it wrote has been reduced. Provider startup can only continue
+to queue and binding declaration after that result succeeds. Invalid persisted records and channel
+shutdown fail replay rather than allowing readiness with incomplete topology.
+
+Integration tests run RabbitMQ 4.2 in Testcontainers and prove concurrent claims, all-or-nothing
+declarations, rolling-replica preservation, connection reconstruction and broker-restart durability.
+No Management API, PostgreSQL dependency, service queue, command binding or public Core contract is
+part of this proof. The current implementation writes one declaration per reconciliation. A snapshot
+or compaction policy must be agreed before production so repeated starts cannot grow the journal
+without bound. Retirement remains a separate topology revision policy.
+
 #### Runtime refactor — implemented
 
 AddTinyBus previously created CommandRouteCache, used its registration to detect duplicate runtime
@@ -578,8 +603,8 @@ Send, publish, receive and settlement are deliberately absent until their vertic
 do not register independent primary workers; Core retains one readable runtime lifecycle.
 
 Provider tests follow production ownership. Core tests reference neither provider. Route/cache and
-route-based startup proofs live in TinyBus.PostgreSql.Tests. TinyBus.RabbitMq.Tests is present in the
-solution and remains empty until RabbitMQ has concrete behavior worth testing.
+route-based startup proofs live in TinyBus.PostgreSql.Tests. TinyBus.RabbitMq.Tests owns deterministic
+addressing tests and the real-broker topology-journal proof.
 
 Behavioral checks prove startup stays pending while provider initialization is pending;
 failure/cancellation never signals readiness; missing or multiple transports fail startup; a provider

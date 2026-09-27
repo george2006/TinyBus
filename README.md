@@ -123,5 +123,8 @@ cache; RabbitMQ does not implement or register them. Only test transport impleme
 Production providers remain future work.
 Core, PostgreSQL and RabbitMQ have separate test projects so provider mechanics cannot leak into the
 Core test dependency graph. RabbitMQ now owns its first concrete behavior: deterministic internal
-command addressing. Broker communication and topology declaration remain future work.
-Transports, persistence, background refresh, receive workers and retries are not implemented yet.
+command addressing. Its topology-journal proof uses a durable RabbitMQ stream to serialize additive
+service declarations and reject competing command owners before routing bindings are installed.
+Service queues, bindings and production provider registration remain future work.
+Message sending, delivery persistence, background refresh, receive workers and retries are not
+implemented yet.

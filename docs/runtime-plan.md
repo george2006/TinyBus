@@ -375,7 +375,14 @@ service binds its queue. Routing does not require sender-side ownership discover
 ownership validation:** bindings alone allow competing services, so a provider-specific check must
 enforce unique command ownership during reconciliation/startup, including concurrent claims.
 If readable ownership metadata is necessary, keep it small and RabbitMQ-specific. Management API
-is not part of the core operational contract. The ownership mechanism remains to be proved.
+is not part of the core operational contract.
+
+The first ownership proof now uses one durable RabbitMQ stream named `tinybus.topology`. Services
+append versioned complete command declarations and fold them in broker order. The first accepted
+owner wins; the same service is idempotent; a declaration with any conflicting owner is rejected
+without applying its other commands. Real-broker tests cover concurrent claims, older replicas and
+broker restart. The journal is not registered as the production transport yet, and its current
+append-per-reconciliation behavior needs a snapshot or compaction policy before production use.
 
 PostgreSQL persists topology in shared tables; RabbitMQ materializes broker resources. Their routing
 representations stay private. The two providers are developed in parallel specifically to prevent
@@ -383,8 +390,8 @@ PostgreSQL concepts leaking into core. Earlier ASB exploration remains a referen
 refactor scope and checks are recorded in [transport-plan.md](transport-plan.md).
 
 Tests preserve the same boundary: TinyBus.Tests references only Core, while TinyBus.PostgreSql.Tests
-and TinyBus.RabbitMq.Tests reference their respective provider. The RabbitMQ project has no placeholder
-tests; its first tests arrive with its first concrete provider behavior.
+and TinyBus.RabbitMq.Tests reference their respective provider. RabbitMQ tests now cover deterministic
+command addressing and topology-journal behavior against a real broker.
 
 Design the smallest concrete transport seam for TinyBus outbound operations and native delivery.
 The design must define:

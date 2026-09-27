@@ -10,4 +10,7 @@
     <ProjectReference Include="../TinyBus/TinyBus.csproj" />
     <InternalsVisibleTo Include="TinyBus.RabbitMq.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
+  </ItemGroup>
 </Project>
