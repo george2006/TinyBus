@@ -733,7 +733,7 @@ service queues or command bindings. It appends one declaration per reconciliatio
 unbounded journal growth requires an agreed snapshot or compaction policy before production use.
 All 149 tests pass.
 
-### RabbitMQ transport initialization — implemented and verified, awaiting review
+### RabbitMQ transport initialization — implemented, verified and approved
 
 The internal RabbitMqTransport now prepares one service for safe command messaging. Initialization
 first reconciles the complete ServiceTopology through the ownership journal. Only an accepted
@@ -749,6 +749,19 @@ queue behind.
 
 This slice does not add provider registration, sending, receiving, events or requests. The Release
 solution build succeeds with no warnings or errors and all 151 tests pass.
+
+Approved and committed as `e4e713f`.
+
+### RabbitMQ provider registration — implemented and verified, awaiting review
+
+Applications can select the provider with `bus.UseRabbitMq(connectionString)`. The extension only
+registers the DI-owned RabbitMqTransport; the common TinyBusRuntime remains the single hosted service
+and awaits provider initialization before host startup completes.
+
+A real-host RabbitMQ test proves that the service queue already exists when `host.StartAsync()`
+returns. Provider-specific workers, sending, receiving and additional RabbitMQ configuration remain
+outside this slice. The Release solution build succeeds with no warnings or errors and all 152 tests
+pass.
 
 ### Later: outbound requirements from IBus usage — deferred
 
