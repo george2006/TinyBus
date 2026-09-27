@@ -11,6 +11,7 @@ internal sealed class SourceGeneration
     public ImmutableArray<(string HintName, string Source)> Generate(
         string assemblyName,
         ImmutableArray<MessageHandlerDefinition> definitions,
+        ImmutableArray<MiddlewareDefinition> middleware,
         ImmutableArray<ReferencedMessageContribution> contributions,
         CancellationToken cancellationToken)
     {
@@ -20,7 +21,7 @@ internal sealed class SourceGeneration
 
         var pipelinePlanner = new IncomingPipelinePlanner();
         var pipelinePlan = pipelinePlanner.Create(
-            manifestPlan, contributions, cancellationToken);
+            manifestPlan, middleware, contributions, cancellationToken);
 
         var manifestEmitter = new ManifestEmitter();
         var manifestSource = manifestEmitter.Emit(manifestPlan, cancellationToken);

@@ -10,6 +10,7 @@ internal sealed class IncomingPipelinePlanner
 {
     public IncomingPipelinePlan Create(
         ManifestPlan manifest,
+        ImmutableArray<MiddlewareDefinition> middleware,
         ImmutableArray<ReferencedMessageContribution> contributions,
         CancellationToken cancellationToken)
     {
@@ -23,6 +24,7 @@ internal sealed class IncomingPipelinePlanner
         return new IncomingPipelinePlan(
             manifest.ManifestTypeName,
             localCommands,
+            middleware,
             commandTargets);
     }
 

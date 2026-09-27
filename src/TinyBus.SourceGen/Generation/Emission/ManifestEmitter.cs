@@ -50,6 +50,8 @@ internal sealed class ManifestEmitter
         writer.WriteLine();
         writer.WriteLine("global::TinyBus.Generated.GeneratedTinyBusManifest.RegisterHandlers(services);");
         writer.WriteLine();
+        writer.WriteLine("global::TinyBus.Generated.GeneratedIncomingMessagePipeline.RegisterMiddleware(services);");
+        writer.WriteLine();
         writer.WriteLine("var pipelineRegistration = global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<");
         writer.Indent();
         writer.WriteLine("global::TinyBus.IIncomingMessagePipeline,");

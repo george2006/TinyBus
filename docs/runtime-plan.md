@@ -55,18 +55,28 @@ explicit; publishing from a handler does not itself guarantee atomicity or exact
 Design this before stabilizing the handler API. Context and publishing remain future intent and
 do not change the handler signatures in the current registration slice.
 
-### Middleware pipeline — future work
+### Middleware pipeline — first slice implemented, awaiting review
 
-TinyBus will need middleware around handler execution. Design a smaller pipeline than
-TinyDispatcher's when there is a concrete middleware use case. `IIncomingMessagePipeline` is the
-runtime boundary for processing an envelope; it does not define middleware composition. The current
-execution slice introduces no continuation object or middleware registrations.
+`IIncomingMessagePipeline` remains the runtime boundary for processing an envelope. Concrete
+middleware opts in with `[IncomingMiddleware(order)]` and implements `IIncomingMessageMiddleware`.
+Generated code resolves the ordered scoped middleware and invokes each concrete type directly
+through `IIncomingMessagePipelineRuntime`; it creates no delegate chain. Middleware can invoke the
+next step or short-circuit execution. The no-middleware path dispatches the envelope directly.
 
-Before implementation, agree ordering, short-circuiting, scope ownership, exceptions and
-cancellation, and how the pipeline surrounds event handlers and acknowledgement boundaries.
-Its relationship to handler context and its allocation cost must be explicit. Preserve direct
-typed calls and avoid delegate chains. Concrete middleware types and pipeline mechanics remain
-deferred decisions.
+The root pipeline owns one asynchronous scope per envelope. Exceptions and cancellation flow to
+its caller unchanged. The current generated terminal handles commands; event execution,
+acknowledgement boundaries, handler context and allocation measurements remain separate slices.
+
+Implementing the middleware interface alone does not activate a type. The generator does not
+inspect the `AddTinyBus` configuration lambda or infer middleware from runtime DI registrations.
+Multi-assembly middleware contributions remain deferred.
+
+### Native AOT — architectural target
+
+Generated dispatch, explicit topology and the absence of runtime assembly scanning give TinyBus a
+strong AOT shape. It is not yet an AOT guarantee: message serialization currently uses the general
+`JsonSerializer` APIs. Add generated JSON metadata, audit trimming and provider dependencies, and
+publish and run one AOT application per provider before declaring support.
 
 ## Feature order
 

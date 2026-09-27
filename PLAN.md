@@ -911,6 +911,29 @@ Message context, middleware, provider acquisition and settlement, worker capacit
 policy remain separate reviewable slices. `TinyBusRuntime` does not consume the pipeline until the
 transport receive contract is agreed.
 
+### Incoming middleware pipeline — implemented and awaiting review
+
+Concrete middleware opts in through `[IncomingMiddleware(order)]` and implements
+`IIncomingMessageMiddleware`. The generator validates declarations and unique order values, emits
+scoped registrations, and composes direct typed calls through `IIncomingMessagePipelineRuntime`.
+Implementing the interface alone does not activate a type. Middleware can surround the next step
+or short-circuit it. With no middleware, envelope dispatch keeps its direct path. The generator
+does not analyze `AddTinyBus`, infer order from runtime registrations, or build a delegate chain.
+
+This slice supports middleware declared in the root assembly. Multi-assembly middleware
+contributions, handler context, transport settlement boundaries and allocation measurements remain
+separate work. Executable tests cover deterministic ordering, wrapping, short-circuiting and
+invalid declarations. All 65 source-generator tests and all 49 Core tests pass in Release.
+
+### Native AOT — architectural target
+
+Keep the runtime and generated dispatch compatible with Native AOT and prove the claim with a
+published, runnable application for each provider. The current typed dispatch avoids runtime
+assembly scanning and reflection-based handler selection, but JSON serialization still uses the
+general `JsonSerializer` APIs. Generated `JsonSerializerContext` metadata, trim-safe registration,
+and published PostgreSQL and RabbitMQ verification are required before TinyBus claims Native AOT
+support.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete

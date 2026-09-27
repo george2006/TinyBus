@@ -19,73 +19,95 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var handlers = FindHandlers(context);
-        context.RegisterSourceOutput(handlers, BuildManifest);
+        var middleware = FindMiddleware(context);
+        var inputs = CombineInputs(context, handlers, middleware);
+
+        context.RegisterSourceOutput(inputs, BuildSources);
     }
 
-    private static void BuildManifest(
+    private static void BuildSources(
         SourceProductionContext output,
-        (Compilation Compilation, ImmutableArray<MessageHandlerAnalysis> Handlers) input)
+        GeneratorInput input)
     {
         var cancellationToken = output.CancellationToken;
-        var analysis = Analyze(input.Compilation, input.Handlers, cancellationToken);
-
-        var validation = Validate(
-            analysis.AssemblyName, analysis.Handlers, analysis.Contributions, cancellationToken);
-        var hasErrors = ReportDiagnostics(output, input.Compilation, validation.Issues);
+        var analysis = Analyze(input, cancellationToken);
+        var validation = Validate(analysis, cancellationToken);
+        var hasErrors = ReportDiagnostics(
+            output,
+            input.Compilation,
+            validation.MessageIssues,
+            validation.MiddlewareIssues);
 
         if (hasErrors)
         {
             return;
         }
 
-        var sources = Generate(
-            analysis.AssemblyName, validation.Definitions, analysis.Contributions, cancellationToken);
+        var sources = Generate(analysis, validation, cancellationToken);
         WriteSources(output, sources);
     }
 
-    private static (
-        string AssemblyName,
-        ImmutableArray<MessageHandlerAnalysis> Handlers,
-        ImmutableArray<ReferencedMessageContribution> Contributions) Analyze(
-        Compilation compilation,
-        ImmutableArray<MessageHandlerAnalysis> handlers,
+    private static GeneratorAnalysis Analyze(
+        GeneratorInput input,
         CancellationToken cancellationToken)
     {
-        var assemblyName = compilation.AssemblyName ?? "Assembly";
+        var assemblyName = input.Compilation.AssemblyName ?? "Assembly";
         var contributionAnalyzer = new ReferencedContributionAnalyzer();
-        var contributions = contributionAnalyzer.Analyze(compilation, cancellationToken);
+        var contributions = contributionAnalyzer.Analyze(
+            input.Compilation,
+            cancellationToken);
+        var analysis = new GeneratorAnalysis(
+            assemblyName,
+            input.Handlers,
+            input.Middleware,
+            contributions);
 
-        return (assemblyName, handlers, contributions);
+        return analysis;
     }
 
-    private static (
-        ImmutableArray<MessageHandlerDefinition> Definitions,
-        ImmutableArray<MessageIssue> Issues) Validate(
-        string assemblyName,
-        ImmutableArray<MessageHandlerAnalysis> analysis,
-        ImmutableArray<ReferencedMessageContribution> contributions,
+    private static GeneratorValidation Validate(
+        GeneratorAnalysis analysis,
         CancellationToken cancellationToken)
     {
-        var handlers = ValidateHandlers(analysis, cancellationToken);
+        var handlers = ValidateHandlers(analysis.Handlers, cancellationToken);
 
         var topologyValidator = new TopologyValidator();
         var topologyIssues = topologyValidator.Validate(
-            assemblyName, handlers, contributions, cancellationToken);
+            analysis.AssemblyName,
+            handlers,
+            analysis.Contributions,
+            cancellationToken);
 
-        var definitions = ExtractValidDefinitions(handlers);
-        var issues = CombineValidationIssues(handlers, topologyIssues);
+        var messageDefinitions = ExtractValidDefinitions(handlers);
+        var messageIssues = CombineValidationIssues(handlers, topologyIssues);
 
-        return (definitions, issues);
+        var middlewareValidator = new MiddlewareValidator();
+        var middleware = middlewareValidator.Validate(
+            analysis.Middleware,
+            cancellationToken);
+        var validation = new GeneratorValidation(
+            messageDefinitions,
+            middleware.Definitions,
+            messageIssues,
+            middleware.Issues);
+
+        return validation;
     }
 
     private static ImmutableArray<(string HintName, string Source)> Generate(
-        string assemblyName,
-        ImmutableArray<MessageHandlerDefinition> definitions,
-        ImmutableArray<ReferencedMessageContribution> contributions,
+        GeneratorAnalysis analysis,
+        GeneratorValidation validation,
         CancellationToken cancellationToken)
     {
         var generation = new SourceGeneration();
-        return generation.Generate(assemblyName, definitions, contributions, cancellationToken);
+        var sources = generation.Generate(
+            analysis.AssemblyName,
+            validation.Messages,
+            validation.Middleware,
+            analysis.Contributions,
+            cancellationToken);
+
+        return sources;
     }
 
     private static void WriteSources(
@@ -138,6 +160,24 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
     private static bool ReportDiagnostics(
         SourceProductionContext context,
         Compilation compilation,
+        ImmutableArray<MessageIssue> messageIssues,
+        ImmutableArray<MiddlewareIssue> middlewareIssues)
+    {
+        var hasMessageErrors = ReportMessageDiagnostics(
+            context,
+            compilation,
+            messageIssues);
+        var hasMiddlewareErrors = ReportMiddlewareDiagnostics(
+            context,
+            compilation,
+            middlewareIssues);
+
+        return hasMessageErrors || hasMiddlewareErrors;
+    }
+
+    private static bool ReportMessageDiagnostics(
+        SourceProductionContext context,
+        Compilation compilation,
         ImmutableArray<MessageIssue> issues)
     {
         var hasErrors = false;
@@ -153,12 +193,28 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
         return hasErrors;
     }
 
-    private static IncrementalValueProvider<(
-        Compilation Compilation,
-        ImmutableArray<MessageHandlerAnalysis> Handlers)> FindHandlers(
+    private static bool ReportMiddlewareDiagnostics(
+        SourceProductionContext context,
+        Compilation compilation,
+        ImmutableArray<MiddlewareIssue> issues)
+    {
+        var hasErrors = false;
+
+        foreach (var issue in issues)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+            var diagnostic = MiddlewareDiagnosticReporter.Create(compilation, issue);
+            context.ReportDiagnostic(diagnostic);
+            hasErrors |= diagnostic.Severity == DiagnosticSeverity.Error;
+        }
+
+        return hasErrors;
+    }
+
+    private static IncrementalValuesProvider<MessageHandlerAnalysis> FindHandlers(
         IncrementalGeneratorInitializationContext context)
     {
-        var handlers = context.SyntaxProvider.CreateSyntaxProvider(
+        return context.SyntaxProvider.CreateSyntaxProvider(
             HandlerDiscovery.IsCandidateDeclaration,
             static (candidate, cancellationToken) =>
             {
@@ -166,9 +222,41 @@ public sealed class TinyBusSourceGenerator : IIncrementalGenerator
                 return analyzer.Analyze(candidate, cancellationToken);
             })
             .SelectMany(static (candidates, _) => candidates);
+    }
 
-        var collectedHandlers = handlers.Collect();
-        return context.CompilationProvider.Combine(collectedHandlers)
-            .Select(static (input, _) => (Compilation: input.Left, Handlers: input.Right));
+    private static IncrementalValuesProvider<MiddlewareAnalysis> FindMiddleware(
+        IncrementalGeneratorInitializationContext context)
+    {
+        return context.SyntaxProvider.CreateSyntaxProvider(
+                MiddlewareDiscovery.IsCandidateDeclaration,
+                static (candidate, cancellationToken) =>
+                {
+                    var analyzer = new MiddlewareAnalyzer();
+                    return analyzer.Analyze(candidate, cancellationToken);
+                })
+            .Where(static candidate => candidate is not null)
+            .Select(static (candidate, _) => candidate!);
+    }
+
+    private static IncrementalValueProvider<GeneratorInput> CombineInputs(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<MessageHandlerAnalysis> handlers,
+        IncrementalValuesProvider<MiddlewareAnalysis> middleware)
+    {
+        var declarations = handlers.Collect().Combine(middleware.Collect());
+
+        return context.CompilationProvider.Combine(declarations)
+            .Select(static (input, _) =>
+            {
+                var compilation = input.Left;
+                var handlers = input.Right.Left;
+                var middleware = input.Right.Right;
+                var generatorInput = new GeneratorInput(
+                    compilation,
+                    handlers,
+                    middleware);
+
+                return generatorInput;
+            });
     }
 }

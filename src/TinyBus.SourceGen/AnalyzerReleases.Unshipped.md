@@ -8,3 +8,5 @@ TBUS003 | TinyBus | Error | Command has multiple handlers
 TBUS004 | TinyBus | Error | Request has multiple handlers
 TBUS005 | TinyBus | Error | Message has conflicting semantics
 TBUS006 | TinyBus | Error | Contract identity maps to multiple message types
+TBUS007 | TinyBus | Error | Invalid incoming middleware declaration
+TBUS008 | TinyBus | Error | Duplicate incoming middleware order

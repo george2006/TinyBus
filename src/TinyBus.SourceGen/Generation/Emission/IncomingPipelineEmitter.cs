@@ -136,7 +136,18 @@ internal sealed class IncomingPipelineEmitter
         writer.WriteLine();
         WritePipelineConstructor(writer);
         writer.WriteLine();
-        WritePipelineExecution(writer);
+        WriteMiddlewareRegistration(writer, plan, cancellationToken);
+        writer.WriteLine();
+        WritePipelineExecution(writer, plan);
+
+        if (!plan.Middleware.IsEmpty)
+        {
+            writer.WriteLine();
+            WriteRuntimeCreation(writer, plan, cancellationToken);
+            writer.WriteLine();
+            WriteRuntime(writer, plan, cancellationToken);
+        }
+
         writer.WriteLine();
         WriteCommandDispatch(writer, plan, cancellationToken);
         writer.Unindent();
@@ -157,7 +168,40 @@ internal sealed class IncomingPipelineEmitter
         writer.WriteLine("}");
     }
 
-    private static void WritePipelineExecution(SourceWriter writer)
+    private static void WriteMiddlewareRegistration(
+        SourceWriter writer,
+        IncomingPipelinePlan plan,
+        CancellationToken cancellationToken)
+    {
+        writer.WriteLine("public static void RegisterMiddleware(");
+        writer.Indent();
+        writer.WriteLine("global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
+        writer.Unindent();
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("global::System.ArgumentNullException.ThrowIfNull(services);");
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var middleware = plan.Middleware[index];
+
+            writer.WriteLine();
+            writer.WriteLine($"var middlewareRegistration{index} = global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Scoped(");
+            writer.Indent();
+            writer.WriteLine($"typeof({middleware.TypeName}),");
+            writer.WriteLine($"typeof({middleware.TypeName}));");
+            writer.Unindent();
+            writer.WriteLine($"global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAdd(services, middlewareRegistration{index});");
+        }
+
+        writer.Unindent();
+        writer.WriteLine("}");
+    }
+
+    private static void WritePipelineExecution(
+        SourceWriter writer,
+        IncomingPipelinePlan plan)
     {
         writer.WriteLine("public async global::System.Threading.Tasks.ValueTask ExecuteAsync(");
         writer.Indent();
@@ -170,9 +214,155 @@ internal sealed class IncomingPipelineEmitter
         writer.WriteLine();
         writer.WriteLine("await using var scope = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.CreateAsyncScope(scopeFactory);");
         writer.WriteLine("var services = scope.ServiceProvider;");
-        writer.WriteLine("var execution = DispatchCommandAsync(services, message, cancellationToken);");
+
+        if (plan.Middleware.IsEmpty)
+        {
+            writer.WriteLine("var execution = DispatchCommandAsync(services, message, cancellationToken);");
+        }
+        else
+        {
+            writer.WriteLine("var runtime = CreateRuntime(services);");
+            writer.WriteLine("var execution = runtime.NextAsync(message, cancellationToken);");
+        }
+
         writer.WriteLine();
         writer.WriteLine("await execution.ConfigureAwait(false);");
+        writer.Unindent();
+        writer.WriteLine("}");
+    }
+
+    private static void WriteRuntimeCreation(
+        SourceWriter writer,
+        IncomingPipelinePlan plan,
+        CancellationToken cancellationToken)
+    {
+        writer.WriteLine("private static Runtime CreateRuntime(global::System.IServiceProvider services)");
+        writer.WriteLine("{");
+        writer.Indent();
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var middleware = plan.Middleware[index];
+            writer.WriteLine($"var middleware{index} = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<{middleware.TypeName}>(services);");
+        }
+
+        writer.WriteLine();
+        writer.WriteLine("var runtime = new Runtime(");
+        writer.Indent();
+        writer.WriteLine("services,");
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var suffix = index == plan.Middleware.Length - 1 ? ");" : ",";
+            writer.WriteLine($"middleware{index}{suffix}");
+        }
+
+        writer.Unindent();
+        writer.WriteLine();
+        writer.WriteLine("return runtime;");
+        writer.Unindent();
+        writer.WriteLine("}");
+    }
+
+    private static void WriteRuntime(
+        SourceWriter writer,
+        IncomingPipelinePlan plan,
+        CancellationToken cancellationToken)
+    {
+        writer.WriteLine("private sealed class Runtime : global::TinyBus.IIncomingMessagePipelineRuntime");
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("private readonly global::System.IServiceProvider services;");
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var middleware = plan.Middleware[index];
+            writer.WriteLine($"private readonly {middleware.TypeName} middleware{index};");
+        }
+
+        writer.WriteLine("private int index;");
+        writer.WriteLine();
+        WriteRuntimeConstructor(writer, plan, cancellationToken);
+        writer.WriteLine();
+        WriteNext(writer, plan, cancellationToken);
+        writer.Unindent();
+        writer.WriteLine("}");
+    }
+
+    private static void WriteRuntimeConstructor(
+        SourceWriter writer,
+        IncomingPipelinePlan plan,
+        CancellationToken cancellationToken)
+    {
+        writer.WriteLine("public Runtime(");
+        writer.Indent();
+        writer.WriteLine("global::System.IServiceProvider services,");
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var middleware = plan.Middleware[index];
+            var suffix = index == plan.Middleware.Length - 1 ? ")" : ",";
+            writer.WriteLine($"{middleware.TypeName} middleware{index}{suffix}");
+        }
+
+        writer.Unindent();
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("this.services = services;");
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            writer.WriteLine($"this.middleware{index} = middleware{index};");
+        }
+
+        writer.Unindent();
+        writer.WriteLine("}");
+    }
+
+    private static void WriteNext(
+        SourceWriter writer,
+        IncomingPipelinePlan plan,
+        CancellationToken cancellationToken)
+    {
+        writer.WriteLine("public global::System.Threading.Tasks.ValueTask NextAsync(");
+        writer.Indent();
+        writer.WriteLine("global::TinyBus.MessageEnvelope message,");
+        writer.WriteLine("global::System.Threading.CancellationToken cancellationToken)");
+        writer.Unindent();
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("var current = index++;");
+        writer.WriteLine();
+        writer.WriteLine("switch (current)");
+        writer.WriteLine("{");
+        writer.Indent();
+
+        for (var index = 0; index < plan.Middleware.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            writer.WriteLine($"case {index}:");
+            writer.WriteLine("{");
+            writer.Indent();
+            writer.WriteLine($"var execution = middleware{index}.InvokeAsync(message, this, cancellationToken);");
+            writer.WriteLine("return execution;");
+            writer.Unindent();
+            writer.WriteLine("}");
+        }
+
+        writer.WriteLine("default:");
+        writer.WriteLine("{");
+        writer.Indent();
+        writer.WriteLine("var execution = DispatchCommandAsync(services, message, cancellationToken);");
+        writer.WriteLine("return execution;");
+        writer.Unindent();
+        writer.WriteLine("}");
+        writer.Unindent();
+        writer.WriteLine("}");
         writer.Unindent();
         writer.WriteLine("}");
     }
