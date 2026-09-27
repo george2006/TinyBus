@@ -9,7 +9,7 @@ internal readonly record struct CommandAddress(
     string Exchange,
     string RoutingKey)
 {
-    private const string CommandExchange = "tinybus.commands";
+    internal const string ExchangeName = "tinybus.commands";
     private const int MaximumRoutingKeyLength = 255;
 
     public static CommandAddress From(ContractIdentity contract)
@@ -20,7 +20,7 @@ internal readonly record struct CommandAddress(
         var routingKey = contract.Name + ".v" + version;
         ValidateRoutingKey(routingKey);
 
-        var address = new CommandAddress(CommandExchange, routingKey);
+        var address = new CommandAddress(ExchangeName, routingKey);
 
         return address;
     }

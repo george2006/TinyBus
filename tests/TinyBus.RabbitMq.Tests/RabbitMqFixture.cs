@@ -13,6 +13,8 @@ public sealed class RabbitMqFixture : IAsyncLifetime
         container = builder.Build();
     }
 
+    public string ConnectionString => container.GetConnectionString();
+
     public Task InitializeAsync()
     {
         return container.StartAsync();

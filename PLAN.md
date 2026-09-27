@@ -733,6 +733,23 @@ service queues or command bindings. It appends one declaration per reconciliatio
 unbounded journal growth requires an agreed snapshot or compaction policy before production use.
 All 149 tests pass.
 
+### RabbitMQ transport initialization — implemented and verified, awaiting review
+
+The internal RabbitMqTransport now prepares one service for safe command messaging. Initialization
+first reconciles the complete ServiceTopology through the ownership journal. Only an accepted
+topology may declare the durable direct `tinybus.commands` exchange, the durable quorum
+`tinybus.{service}` queue and one binding per distinct owned command. Event and request descriptors
+do not create command bindings.
+
+The physical topology remains additive. A still-running older replica can confirm its declarations
+without removing a command binding introduced by a newer replica. A competing command owner fails
+before its service queue is created. Real RabbitMQ tests publish both old and new commands after a
+broker restart and receive them from the same service queue, and prove the rejected owner leaves no
+queue behind.
+
+This slice does not add provider registration, sending, receiving, events or requests. The Release
+solution build succeeds with no warnings or errors and all 151 tests pass.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete
