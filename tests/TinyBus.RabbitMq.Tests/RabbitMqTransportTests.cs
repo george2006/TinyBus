@@ -158,6 +158,84 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         await Assert.ThrowsAnyAsync<PublishException>(Send);
     }
 
+    [Fact]
+    public async Task Receive_honors_available_capacity_and_complete_acknowledges_the_delivery()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await transport.InitializeAsync(topology);
+        var headers = new Dictionary<string, string> { ["tenant"] = "north" };
+        var first = new MessageEnvelope(
+            Guid.NewGuid(),
+            capture,
+            "{\"number\":1}",
+            "correlation-1",
+            "causation-1",
+            headers);
+        var second = new MessageEnvelope(Guid.NewGuid(), capture, "{\"number\":2}");
+        await transport.SendAsync(first);
+        await transport.SendAsync(second);
+        var capacity = new ReceiveCapacity(maximum: 8, available: 1);
+
+        var firstBatch = await transport.ReceiveAsync(capacity);
+
+        var firstDelivery = Assert.Single(firstBatch);
+        AssertEnvelope(first, firstDelivery.Envelope);
+        await firstDelivery.CompleteAsync();
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        AssertEnvelope(second, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task Abandon_requeues_the_delivery()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await transport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture, "{}");
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        await firstDelivery.AbandonAsync();
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        AssertEnvelope(envelope, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task Receive_waits_for_work_and_observes_cancellation()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var topology = CreateTopology(service);
+        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await transport.InitializeAsync(topology);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 4);
+        using var cancellation = new CancellationTokenSource();
+
+        var receiving = transport.ReceiveAsync(capacity, cancellation.Token).AsTask();
+
+        Assert.False(receiving.IsCompleted);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiving);
+    }
+
     private static async Task PublishAsync(
         IChannel channel,
         CommandAddress address,
@@ -227,6 +305,26 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
 
         var topology = new ServiceTopology(service, messages);
         return topology;
+    }
+
+    private static void AssertEnvelope(
+        MessageEnvelope expected,
+        MessageEnvelope actual)
+    {
+        Assert.Equal(expected.MessageId, actual.MessageId);
+        Assert.Equal(expected.Contract, actual.Contract);
+        Assert.Equal(expected.Payload, actual.Payload);
+        Assert.Equal(expected.CorrelationId, actual.CorrelationId);
+        Assert.Equal(expected.CausationId, actual.CausationId);
+
+        if (expected.Headers is null)
+        {
+            Assert.Null(actual.Headers);
+            return;
+        }
+
+        Assert.NotNull(actual.Headers);
+        Assert.Equal(expected.Headers, actual.Headers);
     }
 
     private sealed class TestCommand;

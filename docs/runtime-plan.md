@@ -78,6 +78,19 @@ strong AOT shape. It is not yet an AOT guarantee: message serialization currentl
 `JsonSerializer` APIs. Add generated JSON metadata, audit trimming and provider dependencies, and
 publish and run one AOT application per provider before declaring support.
 
+### Bounded transport reception — provider slice implemented, awaiting review
+
+`ReceiveCapacity` communicates total processing capacity and currently available slots without
+exposing provider mechanics. `ITransport.ReceiveAsync` returns no more than the available count.
+Each `ITransportDelivery` exposes its envelope and provider-owned complete/abandon operations.
+
+PostgreSQL claims a bounded batch with `FOR UPDATE SKIP LOCKED` and an expiring token. RabbitMQ uses
+native push consumption with bounded prefetch and buffering. Completion deletes or acknowledges;
+abandonment releases or requeues. Retry delays, attempt limits, poison handling and PostgreSQL lease
+renewal are deferred. PostgreSQL currently waits through cancellable 250 ms polling when no work is
+available; provider configuration and notification-based wake-up remain later work. `TinyBusRuntime`
+orchestration and shutdown consume this seam in the next slice.
+
 ## Feature order
 
 ### 1. Multi-assembly topology composition

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
 using TinyBus;
+using TinyBus.RabbitMq.Receiving;
 
 namespace TinyBus.RabbitMq;
 
@@ -18,6 +19,7 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 
     private readonly Uri connectionUri;
     private IConnection? connection;
+    private RabbitMqReceiver? receiver;
 
     public RabbitMqTransport(string connectionString)
     {
@@ -47,6 +49,9 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
                 commandAddresses,
                 cancellationToken).ConfigureAwait(false);
 
+            receiver = new RabbitMqReceiver(
+                openedConnection,
+                serviceAddress.QueueName);
             connection = openedConnection;
         }
         catch
@@ -59,7 +64,14 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         var openedConnection = connection;
+        var activeReceiver = receiver;
         connection = null;
+        receiver = null;
+
+        if (activeReceiver is not null)
+        {
+            await activeReceiver.DisposeAsync().ConfigureAwait(false);
+        }
 
         if (openedConnection is null)
         {
@@ -67,6 +79,16 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         }
 
         await openedConnection.DisposeAsync().ConfigureAwait(false);
+    }
+
+    public ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
+        ReceiveCapacity capacity,
+        CancellationToken cancellationToken = default)
+    {
+        var activeReceiver = GetReceiver();
+        var receiving = activeReceiver.ReceiveAsync(capacity, cancellationToken);
+
+        return receiving;
     }
 
     public async ValueTask SendAsync(
@@ -245,6 +267,16 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         }
 
         return connection;
+    }
+
+    private RabbitMqReceiver GetReceiver()
+    {
+        if (receiver is null)
+        {
+            throw new InvalidOperationException("The RabbitMQ transport has not been initialized.");
+        }
+
+        return receiver;
     }
 
     private static BasicProperties CreateProperties(MessageEnvelope message)

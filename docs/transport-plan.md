@@ -139,7 +139,31 @@ after an uncertain outcome. Deduplication must include the recipient where appro
 may legitimately reach several consumers. Atomic business writes, outgoing messages and completion
 need a later transaction/outbox design; a successful handler return does not establish atomicity.
 
-## Proposed transport contracts
+## Transport receive contract — approved and implemented
+
+The transport comparison refined the original async-stream proposal. Core must tell a provider
+both the total execution limit and its currently free slots. PostgreSQL uses free slots as its
+claim limit; RabbitMQ uses the total for prefetch and free slots when draining its bounded buffer.
+
+```csharp
+public readonly record struct ReceiveCapacity(int Maximum, int Available);
+
+public interface ITransportDelivery
+{
+    MessageEnvelope Envelope { get; }
+
+    ValueTask CompleteAsync(CancellationToken cancellationToken);
+
+    ValueTask AbandonAsync(CancellationToken cancellationToken);
+}
+```
+
+`ITransport.ReceiveAsync(ReceiveCapacity, CancellationToken)` returns at most `Available`
+deliveries. Abandonment currently means make the delivery recoverable again. The runtime will stop
+acquiring on shutdown, cancel and await active handlers, and abandon work that did not complete.
+That runtime orchestration is the next slice.
+
+## Earlier transport contract exploration
 
 The user's draft separates outbound operations, reception and delivery acknowledgement. It is a
 design draft, not an instruction to add interfaces to the codebase yet. Destination is a proposed

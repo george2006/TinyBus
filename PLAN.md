@@ -934,6 +934,32 @@ general `JsonSerializer` APIs. Generated `JsonSerializerContext` metadata, trim-
 and published PostgreSQL and RabbitMQ verification are required before TinyBus claims Native AOT
 support.
 
+### Transport acquisition and settlement — implemented, awaiting review
+
+The single `ITransport` provider seam now receives bounded work through `ReceiveCapacity`. Core
+supplies both total and currently available capacity: PostgreSQL limits each claim to available
+execution slots, while RabbitMQ configures prefetch from total capacity and drains no more than the
+available slots. `ITransportDelivery` carries one envelope and owns provider-specific completion or
+abandonment. Abandonment makes the same delivery recoverable; retry schedules and terminal failure
+policy remain later work.
+
+PostgreSQL migration 003 adds expiring command claims. One `FOR UPDATE SKIP LOCKED` statement claims
+the requested batch, completion deletes the still-owned row, and abandonment releases its claim.
+Claims expire after five minutes so process loss does not permanently strand a command; lease
+renewal is still required before long-running handlers are supported safely. Empty receives wait
+inside the provider using a cancellable 250 ms polling interval; configuration and optional
+`LISTEN/NOTIFY` wake-up remain PostgreSQL-specific later work.
+
+PostgreSQL persistence operations are concrete classes grouped under `Persistence/Commands` and
+`Persistence/Queries`. Each owns one statement, its parameters and result mapping. Transport and
+topology orchestration contain no schema SQL; migration SQL remains with the migration that owns it.
+
+RabbitMQ uses an asynchronous broker consumer rather than repeated `BasicGet` calls. Its prefetch
+and in-memory channel are bounded by maximum capacity. The callback copies the envelope before it
+returns; completion acknowledges its delivery tag and abandonment negatively acknowledges with
+requeue. The common runtime does not consume this seam yet. Its capacity tracking, concurrent
+pipeline execution and agreed shutdown behavior form the next slice.
+
 ### Later: outbound requirements from IBus usage — deferred
 
 Analyze semantic IBus invocations in the generator. Command route requirements come from concrete

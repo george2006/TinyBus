@@ -28,4 +28,14 @@ internal sealed class NativeTestTransport : ITransport
 
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
+        ReceiveCapacity capacity,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<ITransportDelivery> deliveries = Array.Empty<ITransportDelivery>();
+
+        return ValueTask.FromResult(deliveries);
+    }
 }

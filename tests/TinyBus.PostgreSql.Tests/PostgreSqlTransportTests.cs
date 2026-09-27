@@ -113,6 +113,81 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
             exception.Message);
     }
 
+    [Fact]
+    public async Task Receive_claims_only_available_capacity_and_complete_removes_the_delivery()
+    {
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var headers = new Dictionary<string, string> { ["tenant"] = "north" };
+        var first = new MessageEnvelope(
+            Guid.NewGuid(),
+            capture.Contract,
+            "{\"number\":1}",
+            "correlation-1",
+            "causation-1",
+            headers);
+        var second = new MessageEnvelope(Guid.NewGuid(), capture.Contract, "{\"number\":2}");
+        await transport.SendAsync(first);
+        await transport.SendAsync(second);
+        var capacity = new ReceiveCapacity(maximum: 8, available: 1);
+
+        var firstBatch = await transport.ReceiveAsync(capacity);
+
+        var firstDelivery = Assert.Single(firstBatch);
+        AssertEnvelope(first, firstDelivery.Envelope);
+        await firstDelivery.CompleteAsync();
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        AssertEnvelope(second, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+
+        var storedCount = await ReadStoredCommandCountAsync();
+        Assert.Equal(0, storedCount);
+    }
+
+    [Fact]
+    public async Task Abandon_makes_the_delivery_available_again()
+    {
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture.Contract, "{}");
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        await firstDelivery.AbandonAsync();
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        AssertEnvelope(envelope, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task Receive_waits_for_work_and_observes_cancellation()
+    {
+        await DropSchemaAsync();
+        var topology = Topology("payments");
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 4);
+        using var cancellation = new CancellationTokenSource();
+
+        var receiving = transport.ReceiveAsync(capacity, cancellation.Token).AsTask();
+
+        Assert.False(receiving.IsCompleted);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiving);
+    }
+
     private PostgreSqlTransport CreateTransport()
     {
         var transport = new PostgreSqlTransport(postgreSql.ConnectionString);
@@ -182,6 +257,17 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         return stored;
     }
 
+    private async Task<long> ReadStoredCommandCountAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM tinybus.command_messages;";
+        var result = await command.ExecuteScalarAsync();
+        var count = Assert.IsType<long>(result);
+
+        return count;
+    }
+
     private async Task<ServiceIdentity> ReadCommandOwnerAsync(ContractIdentity contract)
     {
         await using var connection = await OpenConnectionAsync();
@@ -221,6 +307,26 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
             MessageKind.Command);
 
         return descriptor;
+    }
+
+    private static void AssertEnvelope(
+        MessageEnvelope expected,
+        MessageEnvelope actual)
+    {
+        Assert.Equal(expected.MessageId, actual.MessageId);
+        Assert.Equal(expected.Contract, actual.Contract);
+        Assert.Equal(expected.Payload, actual.Payload);
+        Assert.Equal(expected.CorrelationId, actual.CorrelationId);
+        Assert.Equal(expected.CausationId, actual.CausationId);
+
+        if (expected.Headers is null)
+        {
+            Assert.Null(actual.Headers);
+            return;
+        }
+
+        Assert.NotNull(actual.Headers);
+        Assert.Equal(expected.Headers, actual.Headers);
     }
 
     private sealed record TestMessage;

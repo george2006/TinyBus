@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,5 +18,9 @@ public interface ITransport
     /// </summary>
     ValueTask SendAsync(
         MessageEnvelope message,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
+        ReceiveCapacity capacity,
         CancellationToken cancellationToken = default);
 }
