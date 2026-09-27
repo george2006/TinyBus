@@ -38,17 +38,30 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         await host.StartAsync();
 
         var contract = new ContractIdentity(contractName, 1);
-        var requiredContracts = new[] { contract };
-        var routeSource = new PostgreSqlCommandRouteSource(postgreSql.ConnectionString);
-        var routes = await routeSource.LoadAsync(requiredContracts);
-        var route = Assert.Single(routes);
-        var cache = host.Services.GetService<CommandRouteCache>();
-        var expectedService = new ServiceIdentity(serviceName);
+        var owner = await ReadCommandOwnerAsync(contract);
 
-        Assert.Equal(expectedService, route.Service);
-        Assert.Null(cache);
+        Assert.Equal(serviceName, owner);
 
         await host.StopAsync();
+    }
+
+    private async Task<string> ReadCommandOwnerAsync(ContractIdentity contract)
+    {
+        await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT service_name
+            FROM tinybus.command_owners
+            WHERE contract_name = @contractName
+              AND contract_version = @contractVersion;
+            """;
+        command.Parameters.AddWithValue("contractName", contract.Name);
+        command.Parameters.AddWithValue("contractVersion", contract.Version);
+        var result = await command.ExecuteScalarAsync();
+        var serviceName = Assert.IsType<string>(result);
+
+        return serviceName;
     }
 
     private async Task DropSchemaAsync()

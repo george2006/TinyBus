@@ -843,7 +843,7 @@ an outbound requirement. All 51 PostgreSQL provider tests pass.
 
 Approved and committed as `50efc22`.
 
-### Paired command transport acceptance — implemented and verified, awaiting review
+### Paired command transport acceptance — approved and committed as `2badd5e`
 
 Core now defines one transport-neutral command operation:
 `ITransport.SendAsync(MessageEnvelope, CancellationToken)`. The envelope carries message identity,
@@ -861,6 +861,15 @@ Real provider tests verify durable envelope fields and missing-route failure for
 All 53 PostgreSQL tests pass, and both focused RabbitMQ send tests pass. The full RabbitMQ project has
 one pre-existing broker-restart readiness failure: immediately after restart the stream replica may
 still be unavailable. Typed IBus preparation and serialization remain the following slice.
+
+### Remove the obsolete PostgreSQL route snapshot — approved, implemented and verified
+
+The paired send slice proved that PostgreSQL can resolve command ownership inside the durable insert.
+`CommandRoute`, `CommandRouteCache` and `PostgreSqlCommandRouteSource` therefore have no runtime
+responsibility and have been removed. Their route-loading test infrastructure has also been removed;
+provider startup tests now verify the persisted ownership fact directly. TinyBusRuntime keeps its
+provider-independent startup tests in Core. The remaining 13 PostgreSQL provider tests and all 45
+Core tests pass.
 
 ### Later: outbound requirements from IBus usage — deferred
 

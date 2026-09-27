@@ -23,12 +23,9 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
 
         await transport.InitializeAsync(topology);
 
-        var source = new PostgreSqlCommandRouteSource(postgreSql.ConnectionString);
-        var requiredContracts = new[] { capture.Contract };
-        var persistedRoutes = await source.LoadAsync(requiredContracts);
-        var persistedRoute = Assert.Single(persistedRoutes);
-        Assert.Equal(capture.Contract, persistedRoute.Contract);
-        Assert.Equal(topology.Service, persistedRoute.Service);
+        var owner = await ReadCommandOwnerAsync(capture.Contract);
+
+        Assert.Equal(topology.Service, owner);
     }
 
     [Fact]
@@ -183,6 +180,25 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
             headers);
 
         return stored;
+    }
+
+    private async Task<ServiceIdentity> ReadCommandOwnerAsync(ContractIdentity contract)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT service_name
+            FROM tinybus.command_owners
+            WHERE contract_name = @contractName
+              AND contract_version = @contractVersion;
+            """;
+        command.Parameters.AddWithValue("contractName", contract.Name);
+        command.Parameters.AddWithValue("contractVersion", contract.Version);
+        var result = await command.ExecuteScalarAsync();
+        var serviceName = Assert.IsType<string>(result);
+        var service = new ServiceIdentity(serviceName);
+
+        return service;
     }
 
     private static ServiceTopology Topology(
