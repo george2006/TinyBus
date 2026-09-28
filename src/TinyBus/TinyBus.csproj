@@ -23,5 +23,7 @@
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../../NOTICE" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

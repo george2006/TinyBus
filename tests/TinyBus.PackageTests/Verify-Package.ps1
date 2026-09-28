@@ -136,6 +136,37 @@ function Test-PackageDependencies {
     }
 }
 
+function Test-PackageLegalFiles {
+    param(
+        $Archive,
+        [string]$PackageId
+    )
+
+    $expectedCopyright = 'Copyright 2026 Jorge Durban Antunano'
+    $legalFiles = @('LICENSE', 'NOTICE')
+
+    foreach ($legalFile in $legalFiles) {
+        $entry = $Archive.GetEntry($legalFile)
+
+        if ($null -eq $entry) {
+            throw "Package $PackageId does not contain $legalFile."
+        }
+
+        $reader = [System.IO.StreamReader]::new($entry.Open())
+
+        try {
+            $content = $reader.ReadToEnd()
+
+            if (-not $content.Contains($expectedCopyright)) {
+                throw "Package $PackageId does not declare its copyright in $legalFile."
+            }
+        }
+        finally {
+            $reader.Dispose()
+        }
+    }
+}
+
 function Test-ReleaseTrainPackages {
     param(
         [string]$Feed,
@@ -170,6 +201,7 @@ function Test-ReleaseTrainPackages {
             $metadata = Read-PackageManifest $archive
             Test-PackageManifest $metadata $packageId $Version
             Test-PackageDependencies $metadata $packageId $package.Value
+            Test-PackageLegalFiles $archive $packageId
 
             if ($null -eq $archive.GetEntry('README.md')) {
                 throw "Package $packageId does not contain its declared README."
