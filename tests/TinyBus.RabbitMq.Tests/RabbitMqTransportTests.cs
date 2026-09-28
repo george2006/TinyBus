@@ -37,6 +37,9 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
 
         await rabbitMq.RestartAsync();
 
+        await using var restartedTransport = CreateTransport();
+        await restartedTransport.InitializeAsync(olderTopology);
+
         await using var connection = await rabbitMq.OpenConnectionAsync();
         var channelOptions = new CreateChannelOptions(
             publisherConfirmationsEnabled: false,
@@ -46,8 +49,10 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var refundAddress = CommandAddress.From(refund);
         var serviceAddress = ServiceAddress.From(service);
         var expectedQueueName = "tinybus." + service.Value;
+        var expectedDeadLetterQueueName = expectedQueueName + ".dead-letter";
 
         Assert.Equal(expectedQueueName, serviceAddress.QueueName);
+        Assert.Equal(expectedDeadLetterQueueName, serviceAddress.DeadLetterQueueName);
 
         await PublishAsync(channel, captureAddress, "capture");
         await PublishAsync(channel, refundAddress, "refund");
@@ -257,6 +262,72 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
     }
 
     [Fact]
+    public async Task Dead_letter_routes_the_delivery_to_the_service_dead_letter_queue()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var headers = new Dictionary<string, string> { ["tenant"] = "north" };
+        var envelope = new MessageEnvelope(
+            Guid.NewGuid(),
+            capture,
+            "{\"amount\":100}",
+            "correlation-1",
+            "causation-1",
+            headers);
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var batch = await transport.ReceiveAsync(capacity);
+        var delivery = Assert.Single(batch);
+        var processingError = new InvalidOperationException("Handler failed.");
+
+        await delivery.DeadLetterAsync(processingError);
+
+        await using var connection = await rabbitMq.OpenConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var serviceAddress = ServiceAddress.From(service);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var deadLetter = await ReadDeadLetterAsync(
+            channel,
+            serviceAddress,
+            cancellation.Token);
+        var payload = Encoding.UTF8.GetString(deadLetter.Body.Span);
+        var messageId = envelope.MessageId.ToString("D");
+        var causationId = ReadHeader(deadLetter, "tinybus-causation-id");
+        var serializedHeaders = ReadHeader(deadLetter, "tinybus-headers");
+        var receivedHeaders = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            serializedHeaders);
+        var failedQueue = ReadHeader(deadLetter, "tinybus-failed-queue");
+        var exceptionType = ReadHeader(deadLetter, "tinybus-exception-type");
+        var exceptionMessage = ReadHeader(deadLetter, "tinybus-exception-message");
+        var exceptionDetails = ReadHeader(deadLetter, "tinybus-exception-details");
+        var expectedExceptionType = typeof(InvalidOperationException).FullName;
+        var failedAttempt = deadLetter.BasicProperties.Headers!["tinybus-failed-attempt"];
+        var activeDelivery = await channel.BasicGetAsync(
+            serviceAddress.QueueName,
+            autoAck: true);
+
+        Assert.Null(activeDelivery);
+        Assert.Equal(envelope.Payload, payload);
+        Assert.Equal(messageId, deadLetter.BasicProperties.MessageId);
+        Assert.Equal(capture.Name, deadLetter.BasicProperties.Type);
+        Assert.Equal(envelope.CorrelationId, deadLetter.BasicProperties.CorrelationId);
+        Assert.Equal(1, deadLetter.BasicProperties.Headers!["tinybus-contract-version"]);
+        Assert.Equal(envelope.CausationId, causationId);
+        Assert.NotNull(receivedHeaders);
+        Assert.Equal("north", receivedHeaders["tenant"]);
+        Assert.Equal(serviceAddress.QueueName, failedQueue);
+        Assert.Equal(1, failedAttempt);
+        Assert.Equal(expectedExceptionType, exceptionType);
+        Assert.Equal(processingError.Message, exceptionMessage);
+        Assert.Contains(processingError.Message, exceptionDetails);
+    }
+
+    [Fact]
     public async Task Receive_waits_for_work_and_observes_cancellation()
     {
         var scenarioId = Guid.NewGuid();
@@ -298,6 +369,29 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var value = Encoding.UTF8.GetString(received.Body.Span);
 
         return value;
+    }
+
+    private static async Task<BasicGetResult> ReadDeadLetterAsync(
+        IChannel channel,
+        ServiceAddress serviceAddress,
+        CancellationToken cancellationToken)
+    {
+        var pollingInterval = TimeSpan.FromMilliseconds(50);
+
+        while (true)
+        {
+            var delivery = await channel.BasicGetAsync(
+                serviceAddress.DeadLetterQueueName,
+                autoAck: true,
+                cancellationToken);
+
+            if (delivery is not null)
+            {
+                return delivery;
+            }
+
+            await Task.Delay(pollingInterval, cancellationToken);
+        }
     }
 
     private static Task InitializeAsync(

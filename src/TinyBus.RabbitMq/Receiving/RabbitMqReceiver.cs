@@ -21,15 +21,21 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
 
     private readonly IConnection connection;
     private readonly string queueName;
+    private readonly RabbitMqDeadLetterPublisher deadLetterPublisher;
     private readonly SemaphoreSlim initializationLock = new(1, 1);
     private Channel<ITransportDelivery>? deliveries;
     private IChannel? channel;
     private int maximumCapacity;
 
-    internal RabbitMqReceiver(IConnection connection, string queueName)
+    internal RabbitMqReceiver(
+        IConnection connection,
+        ServiceAddress serviceAddress)
     {
         this.connection = connection;
-        this.queueName = queueName;
+        queueName = serviceAddress.QueueName;
+        deadLetterPublisher = new RabbitMqDeadLetterPublisher(
+            connection,
+            serviceAddress);
     }
 
     internal async ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
@@ -146,16 +152,36 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         var openedChannel = channel!;
         var envelope = ReadEnvelope(arguments);
         var attempt = ReadAttempt(arguments.BasicProperties);
-        var delivery = new RabbitMqCommandDelivery(
-            openedChannel,
+        var properties = CopyProperties(arguments.BasicProperties);
+        var body = arguments.Body.ToArray();
+        var message = new RabbitMqIncomingCommand(
             arguments.DeliveryTag,
             attempt,
-            envelope);
+            envelope,
+            properties,
+            body);
+        var delivery = new RabbitMqCommandDelivery(
+            openedChannel,
+            deadLetterPublisher,
+            message);
         var deliveryChannel = deliveries!;
 
         await deliveryChannel.Writer.WriteAsync(
             delivery,
             arguments.CancellationToken);
+    }
+
+    private static BasicProperties CopyProperties(
+        IReadOnlyBasicProperties source)
+    {
+        var properties = new BasicProperties(source);
+
+        if (source.Headers is not null)
+        {
+            properties.Headers = new Dictionary<string, object?>(source.Headers);
+        }
+
+        return properties;
     }
 
     private Task OnConsumerShutdownAsync(

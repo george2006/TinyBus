@@ -45,6 +45,7 @@ Planned slices:
 5. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
    Implemented, verified and approved.
 6. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.
+   Implemented, verified and approved.
 7. Prove the same retry exhaustion journey against both real providers.
 
 Dead-letter inspection, repair and replay are deliberately deferred until the core transports and

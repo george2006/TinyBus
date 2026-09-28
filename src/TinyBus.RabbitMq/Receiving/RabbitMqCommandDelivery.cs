@@ -9,24 +9,23 @@ namespace TinyBus.RabbitMq.Receiving;
 internal sealed class RabbitMqCommandDelivery : ITransportDelivery
 {
     private readonly IChannel channel;
-    private readonly ulong deliveryTag;
+    private readonly RabbitMqDeadLetterPublisher deadLetterPublisher;
+    private readonly RabbitMqIncomingCommand message;
     private int settlementState;
 
     internal RabbitMqCommandDelivery(
         IChannel channel,
-        ulong deliveryTag,
-        int attempt,
-        MessageEnvelope envelope)
+        RabbitMqDeadLetterPublisher deadLetterPublisher,
+        RabbitMqIncomingCommand message)
     {
         this.channel = channel;
-        this.deliveryTag = deliveryTag;
-        Attempt = attempt;
-        Envelope = envelope;
+        this.deadLetterPublisher = deadLetterPublisher;
+        this.message = message;
     }
 
-    public MessageEnvelope Envelope { get; }
+    public MessageEnvelope Envelope => message.Envelope;
 
-    public int Attempt { get; }
+    public int Attempt => message.Attempt;
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
@@ -35,7 +34,7 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         try
         {
             await channel.BasicAckAsync(
-                deliveryTag,
+                message.DeliveryTag,
                 multiple: false,
                 cancellationToken);
             CompleteSettlement();
@@ -59,7 +58,7 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         try
         {
             await channel.BasicRejectAsync(
-                deliveryTag,
+                message.DeliveryTag,
                 requeue: true,
                 cancellationToken);
             CompleteSettlement();
@@ -71,14 +70,30 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         }
     }
 
-    public ValueTask DeadLetterAsync(
+    public async ValueTask DeadLetterAsync(
         Exception error,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(error);
+        BeginSettlement();
 
-        throw new NotSupportedException(
-            "RabbitMQ dead-letter routing has not been implemented.");
+        try
+        {
+            await deadLetterPublisher.PublishAsync(
+                message,
+                error,
+                cancellationToken);
+            await channel.BasicAckAsync(
+                message.DeliveryTag,
+                multiple: false,
+                cancellationToken);
+            CompleteSettlement();
+        }
+        catch
+        {
+            ResetSettlement();
+            throw;
+        }
     }
 
     public async ValueTask AbandonAsync(CancellationToken cancellationToken = default)
@@ -93,7 +108,7 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         try
         {
             await channel.BasicNackAsync(
-                deliveryTag,
+                message.DeliveryTag,
                 multiple: false,
                 requeue: true,
                 cancellationToken);

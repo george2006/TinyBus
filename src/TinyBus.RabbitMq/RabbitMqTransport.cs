@@ -14,11 +14,15 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 {
     private const string CausationIdHeader = "tinybus-causation-id";
     private const string ContractVersionHeader = "tinybus-contract-version";
+    private const string DeadLetterExchangeArgument = "x-dead-letter-exchange";
+    private const string DeadLetterRoutingKeyArgument = "x-dead-letter-routing-key";
+    private const string DeadLetterStrategyArgument = "x-dead-letter-strategy";
     private const string DelayedRetryMaximumArgument = "x-delayed-retry-max";
     private const string DelayedRetryMinimumArgument = "x-delayed-retry-min";
     private const string DelayedRetryTypeArgument = "x-delayed-retry-type";
     private const string DeliveryLimitArgument = "x-delivery-limit";
     private const string HeadersHeader = "tinybus-headers";
+    private const string OverflowArgument = "x-overflow";
     private const string QueueTypeArgument = "x-queue-type";
 
     private readonly Uri connectionUri;
@@ -62,7 +66,7 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 
             receiver = new RabbitMqReceiver(
                 openedConnection,
-                serviceAddress.QueueName);
+                serviceAddress);
             connection = openedConnection;
         }
         catch
@@ -158,6 +162,10 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
             .ConfigureAwait(false);
 
         await DeclareCommandExchangeAsync(channel, cancellationToken).ConfigureAwait(false);
+        await DeclareDeadLetterTopologyAsync(
+            channel,
+            serviceAddress,
+            cancellationToken).ConfigureAwait(false);
         await DeclareServiceQueueAsync(
             channel,
             serviceAddress,
@@ -167,6 +175,42 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
             channel,
             serviceAddress,
             commandAddresses,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask DeclareDeadLetterTopologyAsync(
+        IChannel channel,
+        ServiceAddress serviceAddress,
+        CancellationToken cancellationToken)
+    {
+        await channel.ExchangeDeclareAsync(
+            ServiceAddress.DeadLetterExchangeName,
+            ExchangeType.Direct,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            noWait: false,
+            cancellationToken).ConfigureAwait(false);
+
+        var arguments = new Dictionary<string, object?>
+        {
+            [QueueTypeArgument] = "quorum"
+        };
+        await channel.QueueDeclareAsync(
+            serviceAddress.DeadLetterQueueName,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments,
+            noWait: false,
+            cancellationToken).ConfigureAwait(false);
+
+        await channel.QueueBindAsync(
+            serviceAddress.DeadLetterQueueName,
+            ServiceAddress.DeadLetterExchangeName,
+            serviceAddress.QueueName,
+            arguments: null,
+            noWait: false,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -195,6 +239,10 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         var arguments = new Dictionary<string, object?>
         {
             [QueueTypeArgument] = "quorum",
+            [DeadLetterExchangeArgument] = ServiceAddress.DeadLetterExchangeName,
+            [DeadLetterRoutingKeyArgument] = serviceAddress.QueueName,
+            [DeadLetterStrategyArgument] = "at-least-once",
+            [OverflowArgument] = "reject-publish",
             [DelayedRetryTypeArgument] = "failed",
             [DelayedRetryMinimumArgument] = minimumDelay,
             [DelayedRetryMaximumArgument] = maximumDelay,
