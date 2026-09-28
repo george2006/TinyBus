@@ -43,10 +43,8 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         var handledCommand = await receipt.WaitAsync(TestTimeout);
         Assert.Equal(command, handledCommand);
 
+        await WaitForCommandCompletionAsync();
         await host.StopAsync();
-
-        var storedCount = await ReadStoredCommandCountAsync();
-        Assert.Equal(0, storedCount);
     }
 
     [Fact]
@@ -96,6 +94,24 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         var count = Assert.IsType<long>(result);
 
         return count;
+    }
+
+    private async Task WaitForCommandCompletionAsync()
+    {
+        var pollingInterval = TimeSpan.FromMilliseconds(50);
+        using var cancellation = new CancellationTokenSource(TestTimeout);
+
+        while (true)
+        {
+            var storedCount = await ReadStoredCommandCountAsync();
+
+            if (storedCount == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(pollingInterval, cancellation.Token);
+        }
     }
 
     private async Task<StoredCommandFailure> WaitForDeadLetterAsync()

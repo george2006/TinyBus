@@ -2,9 +2,11 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.1.0-dev</Version>
     <PackageId>TinySuite.TinyBus.RabbitMq</PackageId>
-    <Description>RabbitMQ transport provider for TinyBus.</Description>
+    <Product>TinyBus RabbitMQ</Product>
+    <Description>RabbitMQ transport for TinyBus with deterministic routing, ownership validation, delayed retries, and durable dead letters.</Description>
+    <PackageTags>tinybus;messaging;commands;rabbitmq;amqp;dotnet</PackageTags>
+    <PackageReleaseNotes>TinyBus RabbitMQ 0.1.0-alpha.1 provides deterministic command routing, additive ownership validation, quorum queues, delayed retries, publisher confirms, and durable dead letters. Upgrade every TinyBus package together.</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TinyBus/TinyBus.csproj" />
@@ -12,5 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

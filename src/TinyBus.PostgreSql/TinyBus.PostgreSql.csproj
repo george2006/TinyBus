@@ -2,9 +2,11 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.1.0-dev</Version>
     <PackageId>TinySuite.TinyBus.PostgreSql</PackageId>
-    <Description>PostgreSQL transport provider for TinyBus.</Description>
+    <Product>TinyBus PostgreSQL</Product>
+    <Description>PostgreSQL transport for TinyBus with built-in migrations, competing consumers, delayed retries, and durable dead-letter storage.</Description>
+    <PackageTags>tinybus;messaging;commands;postgresql;postgres;dotnet</PackageTags>
+    <PackageReleaseNotes>TinyBus PostgreSQL 0.1.0-alpha.1 provides additive command topology, durable command rows, leased competing-consumer claims, delayed retries, and transactional dead-letter moves. Upgrade every TinyBus package together.</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TinyBus/TinyBus.csproj" />
@@ -12,5 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="8.0.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>
