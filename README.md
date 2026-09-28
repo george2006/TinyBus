@@ -109,7 +109,7 @@ services.AddTinyBus(bus =>
 ```
 
 Every delivery runs once per attempt. A handler exception schedules another attempt using bounded
-exponential backoff. The final failure moves the command to the provider's dead-letter storage.
+backoff. The final failure moves the command to the provider's dead-letter storage.
 
 ## Incoming middleware
 
