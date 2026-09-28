@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace TinyBus;
 
@@ -36,10 +38,20 @@ public static class TinyBusServiceCollectionExtensions
         registrations.AddSingleton<DeliveryFailureProcessor>();
         registrations.AddSingleton<IBus>(CreateBus);
         registrations.AddSingleton<IHostedService>(CreateRuntime);
+        RegisterLoggingFallback(registrations);
 
         ApplyRegistrations(services, registrations);
 
         return services;
+    }
+
+    private static void RegisterLoggingFallback(IServiceCollection services)
+    {
+        var loggerType = typeof(ILogger<>);
+        var nullLoggerType = typeof(NullLogger<>);
+        var registration = ServiceDescriptor.Singleton(loggerType, nullLoggerType);
+
+        services.TryAdd(registration);
     }
 
     private static IServiceCollection CopyRegistrations(IServiceCollection services)
