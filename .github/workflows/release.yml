@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build and test before publishing anything
+        run: |
+          dotnet build TinyBus.slnx -c Release -warnaserror
+          dotnet test TinyBus.slnx -c Release --no-build --no-restore -warnaserror
+
+      - name: Verify the release train from real packages
+        shell: pwsh
+        run: ./tests/TinyBus.PackageTests/Verify-Package.ps1
+
+      - name: Derive the package version from the tag
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pack the release train at the tag version
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          dotnet pack src/TinyBus/TinyBus.csproj -c Release --no-build -o ./artifacts -p:Version="$VERSION" -p:PackageVersion="$VERSION"
+          dotnet pack src/TinyBus.PostgreSql/TinyBus.PostgreSql.csproj -c Release --no-build -o ./artifacts -p:Version="$VERSION" -p:PackageVersion="$VERSION"
+          dotnet pack src/TinyBus.RabbitMq/TinyBus.RabbitMq.csproj -c Release --no-build -o ./artifacts -p:Version="$VERSION" -p:PackageVersion="$VERSION"
+
+      - name: Verify package versions match the tag
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          echo "Git tag version: $VERSION"
+          echo "Artifacts:"
+          ls -la ./artifacts
+          for PACKAGE_ID in TinySuite.TinyBus TinySuite.TinyBus.PostgreSql TinySuite.TinyBus.RabbitMq; do
+            if [ ! -f "./artifacts/${PACKAGE_ID}.${VERSION}.nupkg" ]; then
+              echo "ERROR: Expected ./artifacts/${PACKAGE_ID}.${VERSION}.nupkg but it was not found."
+              exit 1
+            fi
+          done
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: durbich
+
+      - name: Publish the release train to NuGet
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json" --skip-duplicate
+
+      - name: Upload packages to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/*.nupkg
