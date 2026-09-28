@@ -17,6 +17,7 @@ internal sealed class ClaimCommandMessages
             SELECT sequence_id
             FROM tinybus.command_messages
             WHERE destination_service = @serviceName
+              AND available_at_utc <= CURRENT_TIMESTAMP
               AND
               (
                   claim_id IS NULL
@@ -39,7 +40,8 @@ internal sealed class ClaimCommandMessages
             messages.payload,
             messages.correlation_id,
             messages.causation_id,
-            messages.headers::text;
+            messages.headers::text,
+            messages.failed_attempts + 1;
         """;
 
     private readonly string connectionString;
@@ -105,6 +107,7 @@ internal sealed class ClaimCommandMessages
         var correlationId = ReadNullableString(reader, 5);
         var causationId = ReadNullableString(reader, 6);
         var headers = ReadHeaders(reader, 7);
+        var attempt = reader.GetInt32(8);
         var contract = new ContractIdentity(contractName, contractVersion);
         var envelope = new MessageEnvelope(
             messageId,
@@ -116,6 +119,7 @@ internal sealed class ClaimCommandMessages
         var claimedMessage = new ClaimedCommandMessage(
             sequenceId,
             claimId,
+            attempt,
             envelope);
 
         return claimedMessage;

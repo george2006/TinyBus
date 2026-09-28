@@ -39,6 +39,7 @@ Planned slices:
 2. Add the Core failure processor that applies the policy and selects durable retry or dead letter.
    Implemented, verified and approved.
 3. Persist PostgreSQL attempts and delayed availability.
+   Implemented, verified and approved.
 4. Configure RabbitMQ 4.3 quorum-queue delayed retries with equivalent behavior.
 5. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
 6. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.

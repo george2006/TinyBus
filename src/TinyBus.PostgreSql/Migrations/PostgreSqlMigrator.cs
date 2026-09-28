@@ -70,8 +70,9 @@ internal sealed class PostgreSqlMigrator
         var createTopology = PostgreSqlMigration001CreateTopology.Create();
         var createCommandMessages = PostgreSqlMigration002CreateCommandMessages.Create();
         var addCommandClaims = PostgreSqlMigration003AddCommandClaims.Create();
+        var addCommandRetries = PostgreSqlMigration004AddCommandRetries.Create();
         var catalog = new PostgreSqlMigrationCatalog(
-            [createTopology, createCommandMessages, addCommandClaims]);
+            [createTopology, createCommandMessages, addCommandClaims, addCommandRetries]);
 
         return catalog;
     }

@@ -11,22 +11,25 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
 {
     private readonly ClaimedCommandMessage message;
     private readonly CompleteCommandMessage completeCommandMessage;
+    private readonly ScheduleCommandMessageRetry scheduleCommandMessageRetry;
     private readonly AbandonCommandMessage abandonCommandMessage;
     private int settlementState;
 
     internal PostgreSqlCommandDelivery(
         ClaimedCommandMessage message,
         CompleteCommandMessage completeCommandMessage,
+        ScheduleCommandMessageRetry scheduleCommandMessageRetry,
         AbandonCommandMessage abandonCommandMessage)
     {
         this.message = message;
         this.completeCommandMessage = completeCommandMessage;
+        this.scheduleCommandMessageRetry = scheduleCommandMessageRetry;
         this.abandonCommandMessage = abandonCommandMessage;
     }
 
     public MessageEnvelope Envelope => message.Envelope;
 
-    public int Attempt => 1;
+    public int Attempt => message.Attempt;
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
@@ -55,7 +58,23 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
     {
         ArgumentNullException.ThrowIfNull(error);
         ArgumentOutOfRangeException.ThrowIfLessThan(delay, TimeSpan.Zero);
-        await ReleaseAsync(cancellationToken);
+        BeginSettlement();
+
+        try
+        {
+            var scheduled = await scheduleCommandMessageRetry.ExecuteAsync(
+                message.SequenceId,
+                message.ClaimId,
+                delay,
+                cancellationToken);
+            EnsureDeliveryIsOwned(scheduled);
+            CompleteSettlement();
+        }
+        catch
+        {
+            ResetSettlement();
+            throw;
+        }
     }
 
     public ValueTask DeadLetterAsync(

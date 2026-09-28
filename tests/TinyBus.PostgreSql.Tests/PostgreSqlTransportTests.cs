@@ -137,11 +137,13 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         var firstBatch = await transport.ReceiveAsync(capacity);
 
         var firstDelivery = Assert.Single(firstBatch);
+        Assert.Equal(1, firstDelivery.Attempt);
         AssertEnvelope(first, firstDelivery.Envelope);
         await firstDelivery.CompleteAsync();
 
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(1, secondDelivery.Attempt);
         AssertEnvelope(second, secondDelivery.Envelope);
         await secondDelivery.CompleteAsync();
 
@@ -167,6 +169,38 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
 
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(1, secondDelivery.Attempt);
+        AssertEnvelope(envelope, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task Scheduled_retry_becomes_available_as_the_next_attempt()
+    {
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture.Contract, "{}");
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        Assert.Equal(1, firstDelivery.Attempt);
+        var processingError = new InvalidOperationException("Handler failed.");
+        var retryDelay = TimeSpan.FromSeconds(1);
+
+        await firstDelivery.ScheduleRetryAsync(processingError, retryDelay);
+
+        var storedRetry = await ReadStoredRetryAsync();
+        Assert.Equal(1, storedRetry.FailedAttempts);
+        Assert.True(storedRetry.AvailableAtUtc > DateTimeOffset.UtcNow);
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var secondBatch = await transport.ReceiveAsync(capacity, cancellation.Token);
+        var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(2, secondDelivery.Attempt);
         AssertEnvelope(envelope, secondDelivery.Envelope);
         await secondDelivery.CompleteAsync();
     }
@@ -268,6 +302,23 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         return count;
     }
 
+    private async Task<StoredRetry> ReadStoredRetryAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT failed_attempts, available_at_utc
+            FROM tinybus.command_messages;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var failedAttempts = reader.GetInt32(0);
+        var availableAtUtc = reader.GetFieldValue<DateTimeOffset>(1);
+        var retry = new StoredRetry(failedAttempts, availableAtUtc);
+
+        return retry;
+    }
+
     private async Task<ServiceIdentity> ReadCommandOwnerAsync(ContractIdentity contract)
     {
         await using var connection = await OpenConnectionAsync();
@@ -341,4 +392,8 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         string CorrelationId,
         string CausationId,
         string Headers);
+
+    private sealed record StoredRetry(
+        int FailedAttempts,
+        DateTimeOffset AvailableAtUtc);
 }

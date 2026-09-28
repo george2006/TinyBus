@@ -25,7 +25,7 @@ public sealed class PostgreSqlMigrationTests : IClassFixture<PostgreSqlFixture>
         var appliedMigrations = await ReadAppliedMigrationsAsync(connection);
         var commandOwnersExists = await CommandOwnersTableExistsAsync(connection);
 
-        Assert.Equal([1L, 2L, 3L], appliedMigrations);
+        Assert.Equal([1L, 2L, 3L, 4L], appliedMigrations);
         Assert.True(commandOwnersExists);
     }
 
@@ -43,7 +43,7 @@ public sealed class PostgreSqlMigrationTests : IClassFixture<PostgreSqlFixture>
         await using var connection = await OpenConnectionAsync();
         var appliedMigrations = await ReadAppliedMigrationsAsync(connection);
 
-        Assert.Equal([1L, 2L, 3L], appliedMigrations);
+        Assert.Equal([1L, 2L, 3L, 4L], appliedMigrations);
     }
 
     [Fact]
