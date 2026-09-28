@@ -49,6 +49,7 @@ Planned slices:
    Follow-up: centralize RabbitMQ wire header names without changing behavior.
    Implemented, verified and approved.
 7. Prove the same retry exhaustion journey against both real providers.
+   Implemented, verified and approved.
 
 Dead-letter inspection, repair and replay are deliberately deferred until the core transports and
 messaging patterns are complete. The first schema and broker topology must retain enough information

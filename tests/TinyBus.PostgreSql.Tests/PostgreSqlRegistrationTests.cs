@@ -49,6 +49,43 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         Assert.Equal(0, storedCount);
     }
 
+    [Fact]
+    public async Task Failed_command_exhausts_retries_and_reaches_dead_letter_storage()
+    {
+        await DropSchemaAsync();
+        var settings = new HostApplicationBuilderSettings { DisableDefaults = true };
+        var builder = new HostApplicationBuilder(settings);
+        builder.Logging.ClearProviders();
+
+        void Configure(TinyBusOptions options)
+        {
+            var retryDelay = TimeSpan.FromSeconds(1);
+            options.Service("payments-postgresql-e2e");
+            options.RetryOptions.MaximumAttempts = 2;
+            options.RetryOptions.MinimumDelay = retryDelay;
+            options.RetryOptions.MaximumDelay = retryDelay;
+            options.UsePostgreSql(postgreSql.ConnectionString);
+        }
+
+        builder.Services.AddTinyBus(Configure);
+        using var host = builder.Build();
+        await host.StartAsync();
+        var bus = host.Services.GetRequiredService<IBus>();
+        var command = new PostgreSqlFailPayment(42);
+
+        await bus.SendAsync(command);
+
+        var failure = await WaitForDeadLetterAsync();
+        await host.StopAsync();
+        var activeCount = await ReadStoredCommandCountAsync();
+        var expectedErrorType = typeof(InvalidOperationException).FullName;
+
+        Assert.Equal(0, activeCount);
+        Assert.Equal(2, failure.Attempts);
+        Assert.Equal(expectedErrorType, failure.ErrorType);
+        Assert.Equal(PostgreSqlFailPaymentHandler.FailureMessage, failure.ErrorMessage);
+    }
+
     private async Task<long> ReadStoredCommandCountAsync()
     {
         await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
@@ -61,6 +98,49 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         return count;
     }
 
+    private async Task<StoredCommandFailure> WaitForDeadLetterAsync()
+    {
+        var pollingInterval = TimeSpan.FromMilliseconds(50);
+        using var cancellation = new CancellationTokenSource(TestTimeout);
+
+        while (true)
+        {
+            var failure = await ReadDeadLetterAsync(cancellation.Token);
+
+            if (failure is not null)
+            {
+                return failure;
+            }
+
+            await Task.Delay(pollingInterval, cancellation.Token);
+        }
+    }
+
+    private async Task<StoredCommandFailure?> ReadDeadLetterAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT failed_attempts, error_type, error_message
+            FROM tinybus.dead_lettered_command_messages;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var attempts = reader.GetInt32(0);
+        var errorType = reader.GetString(1);
+        var errorMessage = reader.GetString(2);
+        var failure = new StoredCommandFailure(attempts, errorType, errorMessage);
+
+        return failure;
+    }
+
     private async Task DropSchemaAsync()
     {
         await using var connection = new NpgsqlConnection(postgreSql.ConnectionString);
@@ -69,10 +149,18 @@ public sealed class PostgreSqlRegistrationTests : IClassFixture<PostgreSqlFixtur
         command.CommandText = "DROP SCHEMA IF EXISTS tinybus CASCADE;";
         await command.ExecuteNonQueryAsync();
     }
+
+    private sealed record StoredCommandFailure(
+        int Attempts,
+        string ErrorType,
+        string ErrorMessage);
 }
 
 [BusContract("tests.postgresql.capture-payment")]
 internal sealed record PostgreSqlCapturePayment(int Amount);
+
+[BusContract("tests.postgresql.fail-payment")]
+internal sealed record PostgreSqlFailPayment(int Amount);
 
 internal sealed class PostgreSqlCapturePaymentHandler :
     ICommandHandler<PostgreSqlCapturePayment>
@@ -92,6 +180,21 @@ internal sealed class PostgreSqlCapturePaymentHandler :
         receipt.Record(command);
 
         return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class PostgreSqlFailPaymentHandler :
+    ICommandHandler<PostgreSqlFailPayment>
+{
+    internal const string FailureMessage = "PostgreSQL handler failed.";
+
+    public ValueTask HandleAsync(
+        PostgreSqlFailPayment command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        throw new InvalidOperationException(FailureMessage);
     }
 }
 
