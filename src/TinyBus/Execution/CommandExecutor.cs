@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +10,7 @@ namespace TinyBus;
 /// Executes commands through the caller's service provider.
 /// The caller owns the scope and must keep it alive until execution completes.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CommandExecutor
 {
     private readonly IServiceProvider services;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -14,6 +15,7 @@ public static class TinyBusServiceCollectionExtensions
     /// Registers the runtime for a compile-time manifest. The generated AddTinyBus overload
     /// selects the application's composed manifest and registers its handlers.
     /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public static IServiceCollection AddTinyBus<TManifest>(
         this IServiceCollection services,
         Action<TinyBusOptions> configure)
