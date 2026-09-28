@@ -2,6 +2,10 @@ using System;
 
 namespace TinyBus;
 
+/// <summary>
+/// Describes the runtime's total concurrency limit and the capacity available to one receive call.
+/// Transport providers must not return more deliveries than <see cref="Available"/>.
+/// </summary>
 public readonly record struct ReceiveCapacity
 {
     public ReceiveCapacity(int maximum, int available)
