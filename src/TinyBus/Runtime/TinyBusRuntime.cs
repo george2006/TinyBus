@@ -13,6 +13,7 @@ internal sealed class TinyBusRuntime : BackgroundService
     private readonly ServiceTopology topology;
     private readonly IIncomingMessagePipeline pipeline;
     private readonly TinyBusRuntimeSettings settings;
+    private readonly DeliveryFailureProcessor failureProcessor;
     private readonly ILogger<TinyBusRuntime> logger;
     private CancellationToken shutdownCancellationToken;
 
@@ -21,18 +22,21 @@ internal sealed class TinyBusRuntime : BackgroundService
         ServiceTopology topology,
         IIncomingMessagePipeline pipeline,
         TinyBusRuntimeSettings settings,
+        DeliveryFailureProcessor failureProcessor,
         ILogger<TinyBusRuntime> logger)
     {
         ArgumentNullException.ThrowIfNull(transport);
         ArgumentNullException.ThrowIfNull(topology);
         ArgumentNullException.ThrowIfNull(pipeline);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(failureProcessor);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.transport = transport;
         this.topology = topology;
         this.pipeline = pipeline;
         this.settings = settings;
+        this.failureProcessor = failureProcessor;
         this.logger = logger;
     }
 
@@ -111,7 +115,8 @@ internal sealed class TinyBusRuntime : BackgroundService
         catch (Exception exception)
         {
             LogProcessingFailure(delivery, exception);
-            await FailDeliveryAsync(delivery, exception, stoppingToken);
+            var settlementToken = ReadSettlementToken(stoppingToken);
+            await failureProcessor.ProcessAsync(delivery, exception, settlementToken);
             return;
         }
 
@@ -131,23 +136,6 @@ internal sealed class TinyBusRuntime : BackgroundService
         catch (Exception exception)
         {
             LogSettlementFailure(delivery, "complete", exception);
-        }
-    }
-
-    private async Task FailDeliveryAsync(
-        ITransportDelivery delivery,
-        Exception error,
-        CancellationToken stoppingToken)
-    {
-        var settlementToken = ReadSettlementToken(stoppingToken);
-
-        try
-        {
-            await delivery.FailAsync(error, settlementToken);
-        }
-        catch (Exception exception)
-        {
-            LogSettlementFailure(delivery, "fail", exception);
         }
     }
 

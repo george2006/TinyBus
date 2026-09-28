@@ -36,11 +36,13 @@ Planned slices:
 
 1. Add the Core retry configuration and distinguish failed processing from operational abandonment.
    Implemented, verified and approved.
-2. Persist PostgreSQL attempts and delayed availability.
-3. Configure RabbitMQ 4.3 quorum-queue delayed retries with equivalent behavior.
-4. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
-5. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.
-6. Prove the same retry exhaustion journey against both real providers.
+2. Add the Core failure processor that applies the policy and selects durable retry or dead letter.
+   Implemented, verified and approved.
+3. Persist PostgreSQL attempts and delayed availability.
+4. Configure RabbitMQ 4.3 quorum-queue delayed retries with equivalent behavior.
+5. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
+6. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.
+7. Prove the same retry exhaustion journey against both real providers.
 
 Dead-letter inspection, repair and replay are deliberately deferred until the core transports and
 messaging patterns are complete. The first schema and broker topology must retain enough information

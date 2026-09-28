@@ -57,12 +57,13 @@ public sealed class TinyBusRuntimeTests
         await delivery.Completed.WaitAsync(TestTimeout);
         Assert.Same(envelope, pipeline.LastMessage);
         Assert.False(delivery.Abandoned.IsCompleted);
-        Assert.False(delivery.Failed.IsCompleted);
+        Assert.False(delivery.RetryScheduled.IsCompleted);
+        Assert.False(delivery.DeadLettered.IsCompleted);
         await host.StopAsync();
     }
 
     [Fact]
-    public async Task Pipeline_failure_fails_the_delivery()
+    public async Task Pipeline_failure_schedules_the_delivery_for_retry()
     {
         var transport = new NativeTestTransport();
         var pipelineError = new InvalidOperationException("Handler failed.");
@@ -75,16 +76,18 @@ public sealed class TinyBusRuntimeTests
         var secondDelivery = new NativeTestDelivery(secondEnvelope);
 
         transport.Enqueue(firstDelivery);
-        var firstFailure = await firstDelivery.Failed.WaitAsync(TestTimeout);
+        var firstRetry = await firstDelivery.RetryScheduled.WaitAsync(TestTimeout);
         transport.Enqueue(secondDelivery);
 
-        var secondFailure = await secondDelivery.Failed.WaitAsync(TestTimeout);
-        Assert.Same(pipelineError, firstFailure);
-        Assert.Same(pipelineError, secondFailure);
+        var secondRetry = await secondDelivery.RetryScheduled.WaitAsync(TestTimeout);
+        Assert.Same(pipelineError, firstRetry.Error);
+        Assert.Same(pipelineError, secondRetry.Error);
         Assert.False(firstDelivery.Completed.IsCompleted);
         Assert.False(secondDelivery.Completed.IsCompleted);
         Assert.False(firstDelivery.Abandoned.IsCompleted);
         Assert.False(secondDelivery.Abandoned.IsCompleted);
+        Assert.False(firstDelivery.DeadLettered.IsCompleted);
+        Assert.False(secondDelivery.DeadLettered.IsCompleted);
         await host.StopAsync();
     }
 
@@ -151,7 +154,8 @@ public sealed class TinyBusRuntimeTests
 
         await delivery.Abandoned.WaitAsync(TestTimeout);
         Assert.False(delivery.Completed.IsCompleted);
-        Assert.False(delivery.Failed.IsCompleted);
+        Assert.False(delivery.RetryScheduled.IsCompleted);
+        Assert.False(delivery.DeadLettered.IsCompleted);
     }
 
     private static IHost CreateHost(
@@ -168,12 +172,21 @@ public sealed class TinyBusRuntimeTests
         var incomingPipeline = pipeline ?? new NoOpIncomingMessagePipeline();
         var maximumConcurrency = maximumConcurrentMessages ?? Environment.ProcessorCount;
         var runtimeSettings = new TinyBusRuntimeSettings(maximumConcurrency);
+        var minimumRetryDelay = TimeSpan.FromSeconds(1);
+        var maximumRetryDelay = TimeSpan.FromSeconds(30);
+        var retryPolicy = new MessageRetryPolicy(
+            5,
+            minimumRetryDelay,
+            maximumRetryDelay);
+        var failureLogger = NullLogger<DeliveryFailureProcessor>.Instance;
+        var failureProcessor = new DeliveryFailureProcessor(retryPolicy, failureLogger);
         var logger = NullLogger<TinyBusRuntime>.Instance;
         var runtime = new TinyBusRuntime(
             transport,
             topology,
             incomingPipeline,
             runtimeSettings,
+            failureProcessor,
             logger);
         builder.Services.AddSingleton<IHostedService>(runtime);
 

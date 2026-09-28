@@ -24,6 +24,8 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
 
     public MessageEnvelope Envelope { get; }
 
+    public int Attempt => 1;
+
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
         BeginSettlement();
@@ -43,12 +45,24 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         }
     }
 
-    public async ValueTask FailAsync(
+    public async ValueTask ScheduleRetryAsync(
+        Exception error,
+        TimeSpan delay,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentOutOfRangeException.ThrowIfLessThan(delay, TimeSpan.Zero);
+        await ReleaseAsync(cancellationToken);
+    }
+
+    public ValueTask DeadLetterAsync(
         Exception error,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(error);
-        await ReleaseAsync(cancellationToken);
+
+        throw new NotSupportedException(
+            "RabbitMQ dead-letter routing has not been implemented.");
     }
 
     public async ValueTask AbandonAsync(CancellationToken cancellationToken = default)

@@ -33,6 +33,7 @@ public static class TinyBusServiceCollectionExtensions
         registrations.AddSingleton(topology);
         registrations.AddSingleton(retryPolicy);
         registrations.AddSingleton(runtimeSettings);
+        registrations.AddSingleton<DeliveryFailureProcessor>();
         registrations.AddSingleton<IBus>(CreateBus);
         registrations.AddSingleton<IHostedService>(CreateRuntime);
 
@@ -67,12 +68,14 @@ public static class TinyBusServiceCollectionExtensions
         var topology = services.GetRequiredService<ServiceTopology>();
         var pipeline = services.GetRequiredService<IIncomingMessagePipeline>();
         var settings = services.GetRequiredService<TinyBusRuntimeSettings>();
+        var failureProcessor = services.GetRequiredService<DeliveryFailureProcessor>();
         var logger = services.GetRequiredService<ILogger<TinyBusRuntime>>();
         var runtime = new TinyBusRuntime(
             transport,
             topology,
             pipeline,
             settings,
+            failureProcessor,
             logger);
 
         return runtime;
