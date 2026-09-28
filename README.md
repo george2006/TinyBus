@@ -1,12 +1,13 @@
 # TinyBus
 
-TinyBus is a small, compile-time oriented service bus for .NET.
+TinyBus is a small, source-generated reliable messaging library for .NET.
 
 It keeps message contracts and handlers simple while moving discovery, validation, registration,
 topology composition, and the incoming pipeline to generated code.
 
-## What you get
+## Alpha.1 supports
 
+- **Reliable fire-and-forget commands**
 - **Compile-time handler discovery** without runtime assembly scanning
 - **Generated incoming pipelines** without delegate chains
 - **Multi-assembly topology composition** owned by the host application
@@ -17,13 +18,30 @@ topology composition, and the incoming pipeline to generated code.
 - **Delayed retries and dead-lettering** implemented by each transport
 - **Native async APIs** built around `ValueTask` and `CancellationToken`
 
-## Status
+## Not supported yet
 
-TinyBus is currently an alpha under active development.
+- Pub/sub events
+- Request/reply
+- Sagas
+- Scheduled messages
+- Outbox integration
+- Production support or API stability guarantees
 
-The command path is implemented end to end for PostgreSQL and RabbitMQ: topology reconciliation,
-sending, receiving, generated dispatch, retries, and dead-lettering. Event publishing and
-request/reply remain under development.
+TinyBus `0.1.0-alpha.1` is intentionally narrow. Its command path is implemented end to end for
+PostgreSQL and RabbitMQ: topology reconciliation, sending, receiving, generated dispatch, retries,
+and dead-lettering. APIs may change before a stable release.
+
+## Install
+
+Install Core and exactly one transport from the same release train:
+
+```bash
+dotnet add package TinySuite.TinyBus --version 0.1.0-alpha.1
+dotnet add package TinySuite.TinyBus.RabbitMq --version 0.1.0-alpha.1
+```
+
+Use `TinySuite.TinyBus.PostgreSql` instead of the RabbitMQ package when PostgreSQL is the transport.
+Upgrade all TinyBus packages together.
 
 ## Quick start
 

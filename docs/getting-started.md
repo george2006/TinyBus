@@ -3,27 +3,24 @@
 This guide creates a service that owns a command, receives it through a transport, and executes its
 handler through the generated incoming pipeline.
 
-## 1. Reference TinyBus and one provider
+## 1. Install TinyBus and one provider
 
-TinyBus is currently an alpha and its packages have not been published. Reference Core and one
-provider from this repository while developing with it:
+Use the Core package with PostgreSQL:
 
-```xml
-<ItemGroup>
-  <ProjectReference Include="..\TinyBus\src\TinyBus\TinyBus.csproj" />
-  <ProjectReference Include="..\TinyBus\src\TinyBus.PostgreSql\TinyBus.PostgreSql.csproj" />
-</ItemGroup>
+```bash
+dotnet add package TinySuite.TinyBus --version 0.1.0-alpha.1
+dotnet add package TinySuite.TinyBus.PostgreSql --version 0.1.0-alpha.1
 ```
 
-For RabbitMQ, replace the provider reference:
+Or use RabbitMQ:
 
-```xml
-<ProjectReference Include="..\TinyBus\src\TinyBus.RabbitMq\TinyBus.RabbitMq.csproj" />
+```bash
+dotnet add package TinySuite.TinyBus --version 0.1.0-alpha.1
+dotnet add package TinySuite.TinyBus.RabbitMq --version 0.1.0-alpha.1
 ```
 
-The package IDs reserved by the projects are `TinySuite.TinyBus`,
-`TinySuite.TinyBus.PostgreSql`, and `TinySuite.TinyBus.RabbitMq`. Installation commands will be added
-when the first preview is published.
+All TinyBus packages belong to one release train. Keep their versions aligned when installing or
+upgrading them.
 
 ## 2. Define the command
 
