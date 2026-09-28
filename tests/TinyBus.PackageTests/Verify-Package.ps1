@@ -1,76 +1,210 @@
-param([string]$RunDirectory)
+param(
+    [string]$PackageVersion = "",
+    [string]$RunDirectory = ""
+)
 
 $ErrorActionPreference = 'Stop'
 
-$repository = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$runId = [Guid]::NewGuid().ToString('N')
-$version = "0.1.0-smoke.$runId"
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
 
-if ([string]::IsNullOrWhiteSpace($RunDirectory)) {
-    $RunDirectory = Join-Path $repository "artifacts/package-tests/$runId"
-}
+    & $FilePath @Arguments
 
-$runDirectory = [System.IO.Path]::GetFullPath($RunDirectory)
-$feed = Join-Path $runDirectory 'feed'
-$packages = Join-Path $runDirectory 'packages'
-$consumer = Join-Path $runDirectory 'consumer'
-New-Item -ItemType Directory -Path $feed, $consumer -Force | Out-Null
-
-dotnet pack (Join-Path $repository 'src/TinyBus/TinyBus.csproj') `
-    -c Release `
-    -o $feed `
-    "-p:PackageVersion=$version" `
-    -warnaserror
-
-if ($LASTEXITCODE -ne 0) {
-    throw 'Package creation failed.'
-}
-
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$package = Join-Path $feed "TinySuite.TinyBus.$version.nupkg"
-$archive = [System.IO.Compression.ZipFile]::OpenRead($package)
-
-try {
-    foreach ($expected in @(
-        'lib/net8.0/TinyBus.dll',
-        'analyzers/dotnet/cs/TinyBus.SourceGen.dll',
-        'README.md')) {
-        if ($null -eq $archive.GetEntry($expected)) {
-            throw "Missing package asset: $expected"
-        }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
     }
+}
 
-    $manifestEntry = $archive.GetEntry('TinySuite.TinyBus.nuspec')
+function Read-PackageManifest {
+    param($Archive)
+
+    $manifestEntry = $Archive.Entries | Where-Object {
+        $_.FullName.EndsWith('.nuspec', [StringComparison]::OrdinalIgnoreCase)
+    }
     $reader = [System.IO.StreamReader]::new($manifestEntry.Open())
+
     try {
         [xml]$manifest = $reader.ReadToEnd()
+        return $manifest.package.metadata
     }
     finally {
         $reader.Dispose()
     }
+}
 
-    $dependencies = @($manifest.SelectNodes("//*[local-name()='dependency']"))
-    $expectedDependencies = @(
-        'Microsoft.Extensions.DependencyInjection.Abstractions',
-        'Microsoft.Extensions.Hosting.Abstractions')
-    $dependencyDifference = Compare-Object -ReferenceObject $expectedDependencies -DifferenceObject $dependencies.id
-    if ($dependencies.Count -ne $expectedDependencies.Count -or $dependencyDifference) {
-        throw 'TinyBus must depend only on DI and Hosting abstractions.'
+function Pack-ReleaseTrain {
+    param(
+        [string]$Repository,
+        [string]$Feed,
+        [string]$Version
+    )
+
+    $projects = @(
+        'src/TinyBus/TinyBus.csproj',
+        'src/TinyBus.PostgreSql/TinyBus.PostgreSql.csproj',
+        'src/TinyBus.RabbitMq/TinyBus.RabbitMq.csproj'
+    )
+
+    Invoke-Native 'dotnet' @(
+        'build',
+        (Join-Path $Repository 'TinyBus.slnx'),
+        '-c', 'Release',
+        '-warnaserror')
+
+    foreach ($project in $projects) {
+        $projectPath = Join-Path $Repository $project
+        Invoke-Native 'dotnet' @(
+            'pack', $projectPath,
+            '-c', 'Release',
+            '--no-build',
+            '-o', $Feed,
+            "/p:PackageVersion=$Version",
+            "/p:Version=$Version",
+            '-warnaserror')
     }
 }
-finally {
-    $archive.Dispose()
+
+function Test-PackageManifest {
+    param(
+        $Metadata,
+        [string]$PackageId,
+        [string]$Version
+    )
+
+    $expectedValues = [ordered]@{
+        id = $PackageId
+        version = $Version
+        authors = 'Jorge Durban Antunano'
+        projectUrl = 'https://github.com/george2006/TinyBus'
+        readme = 'README.md'
+    }
+
+    foreach ($expected in $expectedValues.GetEnumerator()) {
+        $actual = [string]$Metadata.($expected.Key)
+        if ($actual -ne $expected.Value) {
+            throw "Package $PackageId has invalid $($expected.Key): $actual"
+        }
+    }
+
+    $licenseType = [string]$Metadata.license.type
+    $licenseName = [string]$Metadata.license.'#text'
+    $usesApacheLicense = $licenseType -eq 'expression' -and $licenseName -eq 'Apache-2.0'
+
+    if (-not $usesApacheLicense) {
+        throw "Package $PackageId must use the Apache-2.0 license expression."
+    }
+
+    $repositoryUrl = [string]$Metadata.repository.url
+    $repositoryType = [string]$Metadata.repository.type
+    $repositoryUrlMatches = $repositoryUrl -eq 'https://github.com/george2006/TinyBus'
+    $repositoryTypeMatches = $repositoryType -eq 'git'
+    $hasExpectedRepository = $repositoryUrlMatches -and $repositoryTypeMatches
+
+    if (-not $hasExpectedRepository) {
+        throw "Package $PackageId has invalid repository metadata."
+    }
+
+    $description = [string]$Metadata.description
+    $tags = [string]$Metadata.tags
+    $hasDescription = -not [string]::IsNullOrWhiteSpace($description)
+    $hasTags = -not [string]::IsNullOrWhiteSpace($tags)
+
+    if (-not $hasDescription -or -not $hasTags) {
+        throw "Package $PackageId requires a description and tags."
+    }
 }
 
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Consumer') -Destination $consumer -Recurse
-$consumerProject = Join-Path $consumer 'Consumer/Consumer.csproj'
-$projectText = [System.IO.File]::ReadAllText($consumerProject)
-$projectText = $projectText.Replace('Version="0.1.0-dev"', "Version=`"$version`"")
-[System.IO.File]::WriteAllText($consumerProject, $projectText)
+function Test-PackageDependencies {
+    param(
+        $Metadata,
+        [string]$PackageId,
+        [string[]]$ExpectedDependencies
+    )
 
-$configuration = Join-Path $runDirectory 'NuGet.Config'
-$escapedFeed = [System.Security.SecurityElement]::Escape($feed)
-@"
+    $dependencies = @($Metadata.dependencies.group.dependency)
+    $actualDependencies = @($dependencies | ForEach-Object {
+        "$($_.id)=$($_.version)"
+    })
+    $difference = Compare-Object $ExpectedDependencies $actualDependencies
+
+    if ($difference) {
+        $actual = $actualDependencies -join ', '
+        throw "Package $PackageId has unexpected dependencies: $actual"
+    }
+}
+
+function Test-ReleaseTrainPackages {
+    param(
+        [string]$Feed,
+        [string]$Version
+    )
+
+    $packages = [ordered]@{
+        'TinySuite.TinyBus' = @(
+            'Microsoft.Extensions.DependencyInjection.Abstractions=9.0.10',
+            'Microsoft.Extensions.Hosting.Abstractions=9.0.10')
+        'TinySuite.TinyBus.PostgreSql' = @(
+            "TinySuite.TinyBus=$Version",
+            'Npgsql=8.0.9')
+        'TinySuite.TinyBus.RabbitMq' = @(
+            "TinySuite.TinyBus=$Version",
+            'RabbitMQ.Client=7.2.2')
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    foreach ($package in $packages.GetEnumerator()) {
+        $packageId = $package.Key
+        $packagePath = Join-Path $Feed "$packageId.$Version.nupkg"
+
+        if (-not (Test-Path -LiteralPath $packagePath)) {
+            throw "Expected package was not produced: $packagePath"
+        }
+
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($packagePath)
+
+        try {
+            $metadata = Read-PackageManifest $archive
+            Test-PackageManifest $metadata $packageId $Version
+            Test-PackageDependencies $metadata $packageId $package.Value
+
+            if ($null -eq $archive.GetEntry('README.md')) {
+                throw "Package $packageId does not contain its declared README."
+            }
+
+            $assemblyName = $packageId.Replace('TinySuite.', '')
+            $assemblyPath = "lib/net8.0/$assemblyName.dll"
+            if ($null -eq $archive.GetEntry($assemblyPath)) {
+                throw "Package $packageId does not contain $assemblyPath."
+            }
+
+            $isCorePackage = $packageId -eq 'TinySuite.TinyBus'
+            $generator = $archive.GetEntry('analyzers/dotnet/cs/TinyBus.SourceGen.dll')
+            $generatorIsMissing = $null -eq $generator
+
+            if ($isCorePackage -and $generatorIsMissing) {
+                throw 'The Core package does not contain its source generator.'
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+    }
+
+    Write-Host 'TinyBus release-train package manifests and contents passed.'
+}
+
+function Write-NuGetConfiguration {
+    param(
+        [string]$Path,
+        [string]$Feed
+    )
+
+    $escapedFeed = [System.Security.SecurityElement]::Escape($Feed)
+    @"
 <configuration>
   <packageSources>
     <clear />
@@ -79,42 +213,127 @@ $escapedFeed = [System.Security.SecurityElement]::Escape($feed)
   </packageSources>
   <packageSourceMapping>
     <clear />
-    <packageSource key="local"><package pattern="TinySuite.TinyBus" /></packageSource>
+    <packageSource key="local"><package pattern="TinySuite.TinyBus*" /></packageSource>
     <packageSource key="nuget.org"><package pattern="*" /></packageSource>
   </packageSourceMapping>
 </configuration>
-"@ | Set-Content -LiteralPath $configuration -Encoding UTF8
-
-$properties = @("-p:RestorePackagesPath=$packages")
-dotnet restore $consumerProject --configfile $configuration @properties -warnaserror
-if ($LASTEXITCODE -ne 0) {
-    throw 'Consumer restore failed.'
+"@ | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
-dotnet build $consumerProject -c Release --no-restore @properties -warnaserror
-if ($LASTEXITCODE -ne 0) {
-    throw 'Consumer build failed.'
+function Copy-Consumer {
+    param(
+        [string]$Name,
+        [string]$Destination,
+        [string]$Version
+    )
+
+    $source = Join-Path $PSScriptRoot $Name
+    $target = Join-Path $Destination $Name
+    Copy-Item -LiteralPath $source -Destination $target -Recurse
+
+    $project = Join-Path $target "$Name.csproj"
+    $projectText = [System.IO.File]::ReadAllText($project)
+    $projectText = $projectText.Replace('Version="0.1.0-dev"', "Version=`"$Version`"")
+    [System.IO.File]::WriteAllText($project, $projectText)
+
+    return $project
 }
 
-dotnet (Join-Path $consumer 'Consumer/bin/Release/net8.0/Consumer.dll')
-if ($LASTEXITCODE -ne 0) {
-    throw 'Consumer behavior failed.'
+function Test-CoreConsumer {
+    param(
+        [string]$Project,
+        [string]$NuGetConfiguration,
+        [string]$Packages,
+        [string]$RunDirectory
+    )
+
+    $properties = @("-p:RestorePackagesPath=$Packages")
+    $restoreArguments = @(
+        'restore', $Project,
+        '--configfile', $NuGetConfiguration,
+        '--no-cache', '--force') + $properties
+    Invoke-Native 'dotnet' $restoreArguments
+
+    $buildArguments = @(
+        'build', $Project,
+        '-c', 'Release',
+        '--no-restore',
+        '-warnaserror') + $properties
+    Invoke-Native 'dotnet' $buildArguments
+
+    $output = Join-Path (Split-Path $Project) 'bin/Release/net8.0/Consumer.dll'
+    Invoke-Native 'dotnet' @($output)
+
+    $diagnostics = & dotnet build $Project `
+        -c Release `
+        --no-restore `
+        @properties `
+        -p:IncludeInvalidHandler=true `
+        -warnaserror 2>&1
+    $diagnosticExitCode = $LASTEXITCODE
+    $diagnostics | Set-Content -LiteralPath (Join-Path $RunDirectory 'invalid-build.log')
+
+    if ($diagnosticExitCode -eq 0 -or ($diagnostics -join "`n") -notmatch 'error TBUS003:') {
+        throw "Expected the packaged generator to report TBUS003.`n$diagnostics"
+    }
 }
 
-$diagnostics = & dotnet build $consumerProject `
-    -c Release `
-    --no-restore `
-    @properties `
-    -p:IncludeInvalidHandler=true `
-    -warnaserror 2>&1
-$diagnosticExitCode = $LASTEXITCODE
-$diagnostics | Set-Content -LiteralPath (Join-Path $runDirectory 'invalid-build.log')
+function Test-RuntimeConsumer {
+    param(
+        [string]$Project,
+        [string]$NuGetConfiguration,
+        [string]$Packages
+    )
 
-if ($diagnosticExitCode -eq 0 -or ($diagnostics -join "`n") -notmatch 'error TBUS003:') {
-    throw "Expected the packaged generator to report TBUS003.`n$diagnostics"
+    $properties = @("-p:RestorePackagesPath=$Packages")
+    $restoreArguments = @(
+        'restore', $Project,
+        '--configfile', $NuGetConfiguration,
+        '--no-cache', '--force') + $properties
+    Invoke-Native 'dotnet' $restoreArguments
+
+    $buildArguments = @(
+        'build', $Project,
+        '-c', 'Release',
+        '--no-restore',
+        '-warnaserror') + $properties
+    Invoke-Native 'dotnet' $buildArguments
+
+    $output = Join-Path (Split-Path $Project) 'bin/Release/net8.0/RuntimeConsumer.dll'
+    Invoke-Native 'dotnet' @($output)
 }
 
-& (Join-Path $PSScriptRoot 'Verify-Topology.ps1') -PackageVersion $version -RunDirectory $runDirectory
+$repository = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$runId = [Guid]::NewGuid().ToString('N')
+
+if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
+    $PackageVersion = "0.1.0-smoke.$runId"
+}
+
+if ([string]::IsNullOrWhiteSpace($RunDirectory)) {
+    $RunDirectory = Join-Path $repository "artifacts/package-tests/$runId"
+}
+
+$runDirectory = [System.IO.Path]::GetFullPath($RunDirectory)
+$feed = Join-Path $runDirectory 'feed'
+$packages = Join-Path $runDirectory 'packages'
+$consumers = Join-Path $runDirectory 'consumers'
+New-Item -ItemType Directory -Path $feed, $consumers -Force | Out-Null
+
+Pack-ReleaseTrain $repository $feed $PackageVersion
+Test-ReleaseTrainPackages $feed $PackageVersion
+
+$configuration = Join-Path $runDirectory 'NuGet.Config'
+Write-NuGetConfiguration $configuration $feed
+
+$coreConsumer = Copy-Consumer 'Consumer' $consumers $PackageVersion
+Test-CoreConsumer $coreConsumer $configuration $packages $runDirectory
+
+& (Join-Path $PSScriptRoot 'Verify-Topology.ps1') `
+    -PackageVersion $PackageVersion `
+    -RunDirectory $runDirectory
+
+$runtimeConsumer = Copy-Consumer 'RuntimeConsumer' $consumers $PackageVersion
+Test-RuntimeConsumer $runtimeConsumer $configuration $packages
 
 Write-Host "TinyBus package verification passed. Artifacts: $runDirectory"
-exit 0
