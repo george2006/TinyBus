@@ -206,6 +206,50 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
     }
 
     [Fact]
+    public async Task Dead_letter_moves_the_delivery_and_preserves_its_failure()
+    {
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var headers = new Dictionary<string, string> { ["tenant"] = "north" };
+        var envelope = new MessageEnvelope(
+            Guid.NewGuid(),
+            capture.Contract,
+            "{\"amount\":100}",
+            "correlation-1",
+            "causation-1",
+            headers);
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        var firstError = new InvalidOperationException("First failure.");
+
+        await firstDelivery.ScheduleRetryAsync(firstError, TimeSpan.Zero);
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        var finalError = new InvalidOperationException("Handler kept failing.");
+
+        await secondDelivery.DeadLetterAsync(finalError);
+
+        var activeCount = await ReadStoredCommandCountAsync();
+        var deadLetter = await ReadDeadLetterAsync();
+        var expectedErrorType = typeof(InvalidOperationException).FullName;
+
+        Assert.Equal(0, activeCount);
+        Assert.Equal("payments", deadLetter.DestinationService);
+        AssertEnvelope(envelope, deadLetter.Envelope);
+        Assert.Equal(2, deadLetter.FailedAttempts);
+        Assert.True(deadLetter.DeadLetteredAtUtc >= deadLetter.EnqueuedAtUtc);
+        Assert.Equal(expectedErrorType, deadLetter.Failure.Type);
+        Assert.Equal(finalError.Message, deadLetter.Failure.Message);
+        Assert.Contains(finalError.Message, deadLetter.Failure.Details);
+    }
+
+    [Fact]
     public async Task Receive_waits_for_work_and_observes_cancellation()
     {
         await DropSchemaAsync();
@@ -319,6 +363,65 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         return retry;
     }
 
+    private async Task<StoredDeadLetter> ReadDeadLetterAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                message_id,
+                destination_service,
+                contract_name,
+                contract_version,
+                payload,
+                correlation_id,
+                causation_id,
+                headers::text,
+                enqueued_at_utc,
+                failed_attempts,
+                dead_lettered_at_utc,
+                error_type,
+                error_message,
+                error_details
+            FROM tinybus.dead_lettered_command_messages;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var contractName = reader.GetString(2);
+        var contractVersion = reader.GetInt32(3);
+        var contract = new ContractIdentity(contractName, contractVersion);
+        var messageId = reader.GetGuid(0);
+        var destinationService = reader.GetString(1);
+        var payload = reader.GetString(4);
+        var correlationId = reader.GetString(5);
+        var causationId = reader.GetString(6);
+        var serializedHeaders = reader.GetString(7);
+        var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(serializedHeaders);
+        var enqueuedAtUtc = reader.GetFieldValue<DateTimeOffset>(8);
+        var failedAttempts = reader.GetInt32(9);
+        var deadLetteredAtUtc = reader.GetFieldValue<DateTimeOffset>(10);
+        var errorType = reader.GetString(11);
+        var errorMessage = reader.GetString(12);
+        var errorDetails = reader.GetString(13);
+        var envelope = new MessageEnvelope(
+            messageId,
+            contract,
+            payload,
+            correlationId,
+            causationId,
+            headers);
+        var failure = new StoredFailure(errorType, errorMessage, errorDetails);
+        var deadLetter = new StoredDeadLetter(
+            envelope,
+            destinationService,
+            enqueuedAtUtc,
+            failedAttempts,
+            deadLetteredAtUtc,
+            failure);
+
+        return deadLetter;
+    }
+
     private async Task<ServiceIdentity> ReadCommandOwnerAsync(ContractIdentity contract)
     {
         await using var connection = await OpenConnectionAsync();
@@ -396,4 +499,17 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
     private sealed record StoredRetry(
         int FailedAttempts,
         DateTimeOffset AvailableAtUtc);
+
+    private sealed record StoredDeadLetter(
+        MessageEnvelope Envelope,
+        string DestinationService,
+        DateTimeOffset EnqueuedAtUtc,
+        int FailedAttempts,
+        DateTimeOffset DeadLetteredAtUtc,
+        StoredFailure Failure);
+
+    private sealed record StoredFailure(
+        string Type,
+        string Message,
+        string Details);
 }

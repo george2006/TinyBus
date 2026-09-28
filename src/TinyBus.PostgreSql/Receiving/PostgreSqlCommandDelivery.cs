@@ -12,6 +12,7 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
     private readonly ClaimedCommandMessage message;
     private readonly CompleteCommandMessage completeCommandMessage;
     private readonly ScheduleCommandMessageRetry scheduleCommandMessageRetry;
+    private readonly DeadLetterCommandMessage deadLetterCommandMessage;
     private readonly AbandonCommandMessage abandonCommandMessage;
     private int settlementState;
 
@@ -19,11 +20,13 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
         ClaimedCommandMessage message,
         CompleteCommandMessage completeCommandMessage,
         ScheduleCommandMessageRetry scheduleCommandMessageRetry,
+        DeadLetterCommandMessage deadLetterCommandMessage,
         AbandonCommandMessage abandonCommandMessage)
     {
         this.message = message;
         this.completeCommandMessage = completeCommandMessage;
         this.scheduleCommandMessageRetry = scheduleCommandMessageRetry;
+        this.deadLetterCommandMessage = deadLetterCommandMessage;
         this.abandonCommandMessage = abandonCommandMessage;
     }
 
@@ -77,14 +80,28 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
         }
     }
 
-    public ValueTask DeadLetterAsync(
+    public async ValueTask DeadLetterAsync(
         Exception error,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(error);
+        BeginSettlement();
 
-        throw new NotSupportedException(
-            "PostgreSQL dead-letter storage has not been implemented.");
+        try
+        {
+            var deadLettered = await deadLetterCommandMessage.ExecuteAsync(
+                message.SequenceId,
+                message.ClaimId,
+                error,
+                cancellationToken);
+            EnsureDeliveryIsOwned(deadLettered);
+            CompleteSettlement();
+        }
+        catch
+        {
+            ResetSettlement();
+            throw;
+        }
     }
 
     public async ValueTask AbandonAsync(CancellationToken cancellationToken = default)

@@ -21,6 +21,7 @@ internal sealed class PostgreSqlTransport : ITransport
     private readonly ClaimCommandMessages claimCommandMessages;
     private readonly CompleteCommandMessage completeCommandMessage;
     private readonly ScheduleCommandMessageRetry scheduleCommandMessageRetry;
+    private readonly DeadLetterCommandMessage deadLetterCommandMessage;
     private readonly AbandonCommandMessage abandonCommandMessage;
     private string? serviceName;
     private bool initialized;
@@ -35,6 +36,7 @@ internal sealed class PostgreSqlTransport : ITransport
         claimCommandMessages = new ClaimCommandMessages(connectionString);
         completeCommandMessage = new CompleteCommandMessage(connectionString);
         scheduleCommandMessageRetry = new ScheduleCommandMessageRetry(connectionString);
+        deadLetterCommandMessage = new DeadLetterCommandMessage(connectionString);
         abandonCommandMessage = new AbandonCommandMessage(connectionString);
     }
 
@@ -108,6 +110,7 @@ internal sealed class PostgreSqlTransport : ITransport
                 claimedMessage,
                 completeCommandMessage,
                 scheduleCommandMessageRetry,
+                deadLetterCommandMessage,
                 abandonCommandMessage);
             deliveries.Add(delivery);
         }

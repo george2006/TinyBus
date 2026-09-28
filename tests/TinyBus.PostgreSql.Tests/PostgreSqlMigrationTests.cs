@@ -13,7 +13,7 @@ public sealed class PostgreSqlMigrationTests : IClassFixture<PostgreSqlFixture>
     }
 
     [Fact]
-    public async Task Fresh_migration_applies_once_and_creates_command_ownership()
+    public async Task Fresh_migration_applies_once_and_creates_provider_storage()
     {
         await ResetSchemaAsync();
         var migrator = CreateMigrator();
@@ -24,9 +24,13 @@ public sealed class PostgreSqlMigrationTests : IClassFixture<PostgreSqlFixture>
         await using var connection = await OpenConnectionAsync();
         var appliedMigrations = await ReadAppliedMigrationsAsync(connection);
         var commandOwnersExists = await CommandOwnersTableExistsAsync(connection);
+        var deadLettersExist = await TableExistsAsync(
+            connection,
+            "dead_lettered_command_messages");
 
-        Assert.Equal([1L, 2L, 3L, 4L], appliedMigrations);
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], appliedMigrations);
         Assert.True(commandOwnersExists);
+        Assert.True(deadLettersExist);
     }
 
     [Fact]
@@ -43,7 +47,7 @@ public sealed class PostgreSqlMigrationTests : IClassFixture<PostgreSqlFixture>
         await using var connection = await OpenConnectionAsync();
         var appliedMigrations = await ReadAppliedMigrationsAsync(connection);
 
-        Assert.Equal([1L, 2L, 3L, 4L], appliedMigrations);
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], appliedMigrations);
     }
 
     [Fact]
