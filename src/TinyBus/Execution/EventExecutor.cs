@@ -10,7 +10,7 @@ namespace TinyBus;
 /// Attempts each event handler once in registration order and reports success by handler type.
 /// The caller owns the scope and must keep it alive until execution completes.
 /// </summary>
-public sealed class EventExecutor
+internal sealed class EventExecutor
 {
     private readonly IServiceProvider services;
 

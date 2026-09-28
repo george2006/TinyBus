@@ -68,15 +68,18 @@ public sealed class EventExecutionTests
                     var options = new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true };
                     using var provider = services.BuildServiceProvider(options);
                     using var scope = provider.CreateScope();
-                    var executor = new EventExecutor(scope.ServiceProvider);
-                    var handlers = new List<string>();
-                    var message = new Changed(handlers);
+                    var eventHandlers = scope.ServiceProvider.GetServices<IEventHandler<Changed>>();
+                    var executionTrace = new List<string>();
+                    var message = new Changed(executionTrace);
 
-                    var execution = executor.ExecuteAsync(message);
-                    var completion = execution.GetAwaiter();
-                    completion.GetResult();
+                    foreach (var handler in eventHandlers)
+                    {
+                        var execution = handler.HandleAsync(message, CancellationToken.None);
+                        var completion = execution.GetAwaiter();
+                        completion.GetResult();
+                    }
 
-                    return handlers.ToArray();
+                    return executionTrace.ToArray();
                 }
             }
             """);

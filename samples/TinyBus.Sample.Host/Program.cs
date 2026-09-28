@@ -18,7 +18,6 @@ WriteTopology(topology);
 using var scope = provider.CreateScope();
 
 await ExecuteCommands(scope.ServiceProvider);
-await ExecuteEvent(scope.ServiceProvider);
 await ExecuteRequest(scope.ServiceProvider);
 
 static void WriteTopology(ServiceTopology topology)
@@ -46,19 +45,6 @@ static async ValueTask ExecuteCommands(IServiceProvider services)
     var paymentId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     var capture = new CapturePayment(paymentId, 100m);
     await executor.ExecuteAsync(capture);
-}
-
-static async ValueTask ExecuteEvent(IServiceProvider services)
-{
-    var executor = new EventExecutor(services);
-    var orderId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    var message = new OrderPlaced(orderId);
-    var results = await executor.ExecuteAsync(message);
-
-    foreach (var result in results)
-    {
-        Console.WriteLine($"Event result: {result.HandlerType.FullName} | {result.Succeeded}");
-    }
 }
 
 static async ValueTask ExecuteRequest(IServiceProvider services)

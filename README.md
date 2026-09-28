@@ -183,8 +183,8 @@ TinyBus is a good fit when you want:
 ## Samples
 
 The repository contains a multi-project sample under `samples/`. It demonstrates handler discovery,
-cross-assembly topology composition, and local command, event, and request execution while the
-distributed examples continue to evolve.
+cross-assembly topology composition, local command execution, and the request handler contract while
+the distributed event and request/reply paths continue to evolve.
 
 ## License
 
