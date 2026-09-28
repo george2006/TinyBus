@@ -5,21 +5,25 @@ handler through the generated incoming pipeline.
 
 ## 1. Reference TinyBus and one provider
 
-Use the Core package with either PostgreSQL or RabbitMQ:
+TinyBus is currently an alpha and its packages have not been published. Reference Core and one
+provider from this repository while developing with it:
 
-```bash
-dotnet add package TinySuite.TinyBus --prerelease
-dotnet add package TinySuite.TinyBus.PostgreSql --prerelease
+```xml
+<ItemGroup>
+  <ProjectReference Include="..\TinyBus\src\TinyBus\TinyBus.csproj" />
+  <ProjectReference Include="..\TinyBus\src\TinyBus.PostgreSql\TinyBus.PostgreSql.csproj" />
+</ItemGroup>
 ```
 
-For RabbitMQ, replace the provider package:
+For RabbitMQ, replace the provider reference:
 
-```bash
-dotnet add package TinySuite.TinyBus.RabbitMq --prerelease
+```xml
+<ProjectReference Include="..\TinyBus\src\TinyBus.RabbitMq\TinyBus.RabbitMq.csproj" />
 ```
 
-TinyBus is currently an alpha. When working from this repository, project references provide the
-same API surface.
+The package IDs reserved by the projects are `TinySuite.TinyBus`,
+`TinySuite.TinyBus.PostgreSql`, and `TinySuite.TinyBus.RabbitMq`. Installation commands will be added
+when the first preview is published.
 
 ## 2. Define the command
 
