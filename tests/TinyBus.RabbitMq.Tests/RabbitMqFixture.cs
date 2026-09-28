@@ -9,7 +9,7 @@ public sealed class RabbitMqFixture : IAsyncLifetime
 
     public RabbitMqFixture()
     {
-        var builder = new RabbitMqBuilder("rabbitmq:4.2-alpine");
+        var builder = new RabbitMqBuilder("rabbitmq:4.3-alpine");
         container = builder.Build();
     }
 

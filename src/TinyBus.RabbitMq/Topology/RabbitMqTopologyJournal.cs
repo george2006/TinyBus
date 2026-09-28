@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 using TinyBus;
 
 namespace TinyBus.RabbitMq;
@@ -10,8 +11,10 @@ namespace TinyBus.RabbitMq;
 internal sealed class RabbitMqTopologyJournal
 {
     private const string JournalName = "tinybus.topology";
+    private const int MaximumReadinessAttempts = 40;
     private const string StreamOffsetArgument = "x-stream-offset";
     private const string StreamTypeArgument = "x-queue-type";
+    private static readonly TimeSpan ReadinessRetryDelay = TimeSpan.FromMilliseconds(250);
 
     private readonly IConnection connection;
 
@@ -29,6 +32,26 @@ internal sealed class RabbitMqTopologyJournal
         ArgumentNullException.ThrowIfNull(topology);
 
         var declaration = TopologyDeclaration.Create(topology);
+
+        for (var attempt = 1; attempt <= MaximumReadinessAttempts; attempt++)
+        {
+            try
+            {
+                await ReconcileDeclarationAsync(declaration, cancellationToken);
+                return;
+            }
+            catch (OperationInterruptedException exception)
+                when (ShouldRetryReadiness(exception, attempt))
+            {
+                await Task.Delay(ReadinessRetryDelay, cancellationToken);
+            }
+        }
+    }
+
+    private async ValueTask ReconcileDeclarationAsync(
+        TopologyDeclaration declaration,
+        CancellationToken cancellationToken)
+    {
         var channelOptions = new CreateChannelOptions(
             publisherConfirmationsEnabled: true,
             publisherConfirmationTrackingEnabled: true);
@@ -48,6 +71,35 @@ internal sealed class RabbitMqTopologyJournal
 
         await channel.BasicCancelAsync(consumerTag, false, cancellationToken).ConfigureAwait(false);
         ThrowIfRejected(result);
+    }
+
+    private static bool ShouldRetryReadiness(
+        OperationInterruptedException exception,
+        int attempt)
+    {
+        if (attempt == MaximumReadinessAttempts)
+        {
+            return false;
+        }
+
+        var reason = exception.ShutdownReason;
+
+        if (reason is null)
+        {
+            return false;
+        }
+
+        if (reason.ReplyCode == 541)
+        {
+            return true;
+        }
+
+        var replicaIsUnavailable = reason.ReplyCode == 406
+            && reason.ReplyText.Contains(
+                "does not have a running replica",
+                StringComparison.Ordinal);
+
+        return replicaIsUnavailable;
     }
 
     private static async ValueTask DeclareJournalAsync(

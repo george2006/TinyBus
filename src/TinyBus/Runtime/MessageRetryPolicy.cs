@@ -4,11 +4,32 @@ namespace TinyBus;
 
 public sealed class MessageRetryPolicy
 {
-    internal MessageRetryPolicy(
+    public MessageRetryPolicy(
         int maximumAttempts,
         TimeSpan minimumDelay,
         TimeSpan maximumDelay)
     {
+        if (maximumAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumAttempts),
+                "Maximum attempts must be greater than zero.");
+        }
+
+        if (minimumDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(minimumDelay),
+                "Minimum retry delay cannot be negative.");
+        }
+
+        if (maximumDelay < minimumDelay)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumDelay),
+                "Maximum retry delay must be greater than or equal to minimum retry delay.");
+        }
+
         MaximumAttempts = maximumAttempts;
         MinimumDelay = minimumDelay;
         MaximumDelay = maximumDelay;

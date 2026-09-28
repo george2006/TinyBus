@@ -15,16 +15,18 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
     internal RabbitMqCommandDelivery(
         IChannel channel,
         ulong deliveryTag,
+        int attempt,
         MessageEnvelope envelope)
     {
         this.channel = channel;
         this.deliveryTag = deliveryTag;
+        Attempt = attempt;
         Envelope = envelope;
     }
 
     public MessageEnvelope Envelope { get; }
 
-    public int Attempt => 1;
+    public int Attempt { get; }
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
@@ -52,7 +54,21 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
     {
         ArgumentNullException.ThrowIfNull(error);
         ArgumentOutOfRangeException.ThrowIfLessThan(delay, TimeSpan.Zero);
-        await ReleaseAsync(cancellationToken);
+        BeginSettlement();
+
+        try
+        {
+            await channel.BasicRejectAsync(
+                deliveryTag,
+                requeue: true,
+                cancellationToken);
+            CompleteSettlement();
+        }
+        catch
+        {
+            ResetSettlement();
+            throw;
+        }
     }
 
     public ValueTask DeadLetterAsync(

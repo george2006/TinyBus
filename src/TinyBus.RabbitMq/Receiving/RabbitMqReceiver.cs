@@ -16,6 +16,7 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
 {
     private const string CausationIdHeader = "tinybus-causation-id";
     private const string ContractVersionHeader = "tinybus-contract-version";
+    private const string DeliveryCountHeader = "x-delivery-count";
     private const string HeadersHeader = "tinybus-headers";
 
     private readonly IConnection connection;
@@ -144,9 +145,11 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     {
         var openedChannel = channel!;
         var envelope = ReadEnvelope(arguments);
+        var attempt = ReadAttempt(arguments.BasicProperties);
         var delivery = new RabbitMqCommandDelivery(
             openedChannel,
             arguments.DeliveryTag,
+            attempt,
             envelope);
         var deliveryChannel = deliveries!;
 
@@ -192,6 +195,28 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
             headers);
 
         return envelope;
+    }
+
+    private static int ReadAttempt(IReadOnlyBasicProperties properties)
+    {
+        var headers = properties.Headers;
+
+        if (headers is null || !headers.TryGetValue(DeliveryCountHeader, out var value))
+        {
+            return 1;
+        }
+
+        var deliveryCount = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+
+        if (deliveryCount < 0)
+        {
+            throw new InvalidOperationException(
+                "The RabbitMQ delivery contains a negative delivery count.");
+        }
+
+        var attempt = checked(deliveryCount + 1);
+
+        return attempt;
     }
 
     private static Guid ReadMessageId(IReadOnlyBasicProperties properties)

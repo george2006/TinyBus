@@ -14,16 +14,26 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 {
     private const string CausationIdHeader = "tinybus-causation-id";
     private const string ContractVersionHeader = "tinybus-contract-version";
+    private const string DelayedRetryMaximumArgument = "x-delayed-retry-max";
+    private const string DelayedRetryMinimumArgument = "x-delayed-retry-min";
+    private const string DelayedRetryTypeArgument = "x-delayed-retry-type";
+    private const string DeliveryLimitArgument = "x-delivery-limit";
     private const string HeadersHeader = "tinybus-headers";
     private const string QueueTypeArgument = "x-queue-type";
 
     private readonly Uri connectionUri;
+    private readonly MessageRetryPolicy retryPolicy;
     private IConnection? connection;
     private RabbitMqReceiver? receiver;
 
-    public RabbitMqTransport(string connectionString)
+    public RabbitMqTransport(
+        string connectionString,
+        MessageRetryPolicy retryPolicy)
     {
+        ArgumentNullException.ThrowIfNull(retryPolicy);
+
         connectionUri = ReadConnectionUri(connectionString);
+        this.retryPolicy = retryPolicy;
     }
 
     public async ValueTask InitializeAsync(
@@ -47,6 +57,7 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
                 openedConnection,
                 serviceAddress,
                 commandAddresses,
+                retryPolicy,
                 cancellationToken).ConfigureAwait(false);
 
             receiver = new RabbitMqReceiver(
@@ -136,6 +147,7 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         IConnection connection,
         ServiceAddress serviceAddress,
         IReadOnlyCollection<CommandAddress> commandAddresses,
+        MessageRetryPolicy retryPolicy,
         CancellationToken cancellationToken)
     {
         var channelOptions = new CreateChannelOptions(
@@ -146,7 +158,11 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
             .ConfigureAwait(false);
 
         await DeclareCommandExchangeAsync(channel, cancellationToken).ConfigureAwait(false);
-        await DeclareServiceQueueAsync(channel, serviceAddress, cancellationToken).ConfigureAwait(false);
+        await DeclareServiceQueueAsync(
+            channel,
+            serviceAddress,
+            retryPolicy,
+            cancellationToken).ConfigureAwait(false);
         await BindCommandsAsync(
             channel,
             serviceAddress,
@@ -171,11 +187,18 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
     private static async ValueTask DeclareServiceQueueAsync(
         IChannel channel,
         ServiceAddress serviceAddress,
+        MessageRetryPolicy retryPolicy,
         CancellationToken cancellationToken)
     {
+        var minimumDelay = ReadMilliseconds(retryPolicy.MinimumDelay);
+        var maximumDelay = ReadMilliseconds(retryPolicy.MaximumDelay);
         var arguments = new Dictionary<string, object?>
         {
-            [QueueTypeArgument] = "quorum"
+            [QueueTypeArgument] = "quorum",
+            [DelayedRetryTypeArgument] = "failed",
+            [DelayedRetryMinimumArgument] = minimumDelay,
+            [DelayedRetryMaximumArgument] = maximumDelay,
+            [DeliveryLimitArgument] = retryPolicy.MaximumAttempts
         };
 
         await channel.QueueDeclareAsync(
@@ -186,6 +209,14 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
             arguments,
             noWait: false,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static long ReadMilliseconds(TimeSpan delay)
+    {
+        var roundedMilliseconds = Math.Ceiling(delay.TotalMilliseconds);
+        var milliseconds = checked((long)roundedMilliseconds);
+
+        return milliseconds;
     }
 
     private static async ValueTask BindCommandsAsync(

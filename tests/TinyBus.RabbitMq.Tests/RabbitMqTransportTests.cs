@@ -25,12 +25,12 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var newerTopology = CreateTopology(service, capture, refund);
         var olderTopology = CreateTopology(service, capture);
 
-        await using (var newerTransport = new RabbitMqTransport(rabbitMq.ConnectionString))
+        await using (var newerTransport = CreateTransport())
         {
             await newerTransport.InitializeAsync(newerTopology);
         }
 
-        await using (var olderTransport = new RabbitMqTransport(rabbitMq.ConnectionString))
+        await using (var olderTransport = CreateTransport())
         {
             await olderTransport.InitializeAsync(olderTopology);
         }
@@ -72,10 +72,10 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var payments = CreateTopology(paymentsService, capture);
         var checkout = CreateTopology(checkoutService, capture, ship);
 
-        await using var paymentsTransport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var paymentsTransport = CreateTransport();
         await paymentsTransport.InitializeAsync(payments);
 
-        await using var checkoutTransport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var checkoutTransport = CreateTransport();
         Func<Task> initializeCheckout = () => InitializeAsync(checkoutTransport, checkout);
         await Assert.ThrowsAsync<InvalidOperationException>(initializeCheckout);
 
@@ -98,7 +98,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var service = new ServiceIdentity($"payments-{scenario}");
         var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
         var topology = CreateTopology(service, capture);
-        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var transport = CreateTransport();
         await transport.InitializeAsync(topology);
         var messageId = Guid.NewGuid();
         var headers = new Dictionary<string, string> { ["tenant"] = "north" };
@@ -141,7 +141,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var scenario = scenarioId.ToString("N");
         var service = new ServiceIdentity($"payments-{scenario}");
         var topology = CreateTopology(service);
-        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var transport = CreateTransport();
         await transport.InitializeAsync(topology);
         var contract = new ContractIdentity($"{scenario}.payments.capture", 1);
         var messageId = Guid.NewGuid();
@@ -166,7 +166,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var service = new ServiceIdentity($"payments-{scenario}");
         var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
         var topology = CreateTopology(service, capture);
-        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var transport = CreateTransport();
         await transport.InitializeAsync(topology);
         var headers = new Dictionary<string, string> { ["tenant"] = "north" };
         var first = new MessageEnvelope(
@@ -184,11 +184,13 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var firstBatch = await transport.ReceiveAsync(capacity);
 
         var firstDelivery = Assert.Single(firstBatch);
+        Assert.Equal(1, firstDelivery.Attempt);
         AssertEnvelope(first, firstDelivery.Envelope);
         await firstDelivery.CompleteAsync();
 
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(1, secondDelivery.Attempt);
         AssertEnvelope(second, secondDelivery.Envelope);
         await secondDelivery.CompleteAsync();
     }
@@ -201,7 +203,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var service = new ServiceIdentity($"payments-{scenario}");
         var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
         var topology = CreateTopology(service, capture);
-        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var transport = CreateTransport();
         await transport.InitializeAsync(topology);
         var envelope = new MessageEnvelope(Guid.NewGuid(), capture, "{}");
         await transport.SendAsync(envelope);
@@ -209,10 +211,47 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
 
         var firstBatch = await transport.ReceiveAsync(capacity);
         var firstDelivery = Assert.Single(firstBatch);
+        Assert.Equal(1, firstDelivery.Attempt);
         await firstDelivery.AbandonAsync();
 
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(1, secondDelivery.Attempt);
+        AssertEnvelope(envelope, secondDelivery.Envelope);
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task Scheduled_retry_becomes_available_as_the_next_attempt()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        var retryDelay = TimeSpan.FromSeconds(1);
+        var retryPolicy = new MessageRetryPolicy(3, retryDelay, retryDelay);
+        await using var transport = CreateTransport(retryPolicy);
+        await transport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture, "{}");
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        var processingError = new InvalidOperationException("Handler failed.");
+
+        Assert.Equal(1, firstDelivery.Attempt);
+        await firstDelivery.ScheduleRetryAsync(processingError, retryDelay);
+
+        using var earlyCancellation = new CancellationTokenSource(
+            TimeSpan.FromMilliseconds(200));
+        var earlyReceive = transport.ReceiveAsync(capacity, earlyCancellation.Token).AsTask();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => earlyReceive);
+
+        using var retryCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var secondBatch = await transport.ReceiveAsync(capacity, retryCancellation.Token);
+        var secondDelivery = Assert.Single(secondBatch);
+        Assert.Equal(2, secondDelivery.Attempt);
         AssertEnvelope(envelope, secondDelivery.Envelope);
         await secondDelivery.CompleteAsync();
     }
@@ -224,7 +263,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var scenario = scenarioId.ToString("N");
         var service = new ServiceIdentity($"payments-{scenario}");
         var topology = CreateTopology(service);
-        await using var transport = new RabbitMqTransport(rabbitMq.ConnectionString);
+        await using var transport = CreateTransport();
         await transport.InitializeAsync(topology);
         var capacity = new ReceiveCapacity(maximum: 4, available: 4);
         using var cancellation = new CancellationTokenSource();
@@ -269,6 +308,28 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var task = initialization.AsTask();
 
         return task;
+    }
+
+    private RabbitMqTransport CreateTransport()
+    {
+        var minimumDelay = TimeSpan.FromSeconds(1);
+        var maximumDelay = TimeSpan.FromSeconds(30);
+        var retryPolicy = new MessageRetryPolicy(
+            5,
+            minimumDelay,
+            maximumDelay);
+        var transport = CreateTransport(retryPolicy);
+
+        return transport;
+    }
+
+    private RabbitMqTransport CreateTransport(MessageRetryPolicy retryPolicy)
+    {
+        var transport = new RabbitMqTransport(
+            rabbitMq.ConnectionString,
+            retryPolicy);
+
+        return transport;
     }
 
     private static async Task DeclarePassiveAsync(

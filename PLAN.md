@@ -41,6 +41,7 @@ Planned slices:
 3. Persist PostgreSQL attempts and delayed availability.
    Implemented, verified and approved.
 4. Configure RabbitMQ 4.3 quorum-queue delayed retries with equivalent behavior.
+   Implemented and verified; awaiting review.
 5. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
 6. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.
 7. Prove the same retry exhaustion journey against both real providers.

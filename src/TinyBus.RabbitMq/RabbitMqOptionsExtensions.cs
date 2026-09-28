@@ -17,9 +17,10 @@ public static class RabbitMqOptionsExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var services = options.Services;
-        Func<IServiceProvider, ITransport> createTransport = _ =>
+        Func<IServiceProvider, ITransport> createTransport = provider =>
         {
-            var transport = new RabbitMqTransport(connectionString);
+            var retryPolicy = provider.GetRequiredService<MessageRetryPolicy>();
+            var transport = new RabbitMqTransport(connectionString, retryPolicy);
             return transport;
         };
         services.AddSingleton(createTransport);
