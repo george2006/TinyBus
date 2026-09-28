@@ -111,7 +111,7 @@ internal sealed class TinyBusRuntime : BackgroundService
         catch (Exception exception)
         {
             LogProcessingFailure(delivery, exception);
-            await AbandonDeliveryAsync(delivery, stoppingToken);
+            await FailDeliveryAsync(delivery, exception, stoppingToken);
             return;
         }
 
@@ -131,6 +131,23 @@ internal sealed class TinyBusRuntime : BackgroundService
         catch (Exception exception)
         {
             LogSettlementFailure(delivery, "complete", exception);
+        }
+    }
+
+    private async Task FailDeliveryAsync(
+        ITransportDelivery delivery,
+        Exception error,
+        CancellationToken stoppingToken)
+    {
+        var settlementToken = ReadSettlementToken(stoppingToken);
+
+        try
+        {
+            await delivery.FailAsync(error, settlementToken);
+        }
+        catch (Exception exception)
+        {
+            LogSettlementFailure(delivery, "fail", exception);
         }
     }
 

@@ -57,6 +57,9 @@ public sealed class TinyBusRegistrationTests
         {
             bus.Service("payments");
             bus.MaximumConcurrentMessages = 12;
+            bus.RetryOptions.MaximumAttempts = 4;
+            bus.RetryOptions.MinimumDelay = TimeSpan.FromSeconds(2);
+            bus.RetryOptions.MaximumDelay = TimeSpan.FromSeconds(5);
             bus.UseTestTransport();
         });
         using var host = builder.Build();
@@ -76,8 +79,15 @@ public sealed class TinyBusRegistrationTests
         var sameBus = host.Services.GetRequiredService<IBus>();
         var expectedService = new ServiceIdentity("payments");
         var runtimeSettings = host.Services.GetRequiredService<TinyBusRuntimeSettings>();
+        var retryPolicy = host.Services.GetRequiredService<MessageRetryPolicy>();
         Assert.Equal(expectedService, topology.Service);
         Assert.Equal(12, runtimeSettings.MaximumConcurrentMessages);
+        Assert.Equal(4, retryPolicy.MaximumAttempts);
+        Assert.Equal(TimeSpan.FromSeconds(2), retryPolicy.MinimumDelay);
+        Assert.Equal(TimeSpan.FromSeconds(5), retryPolicy.MaximumDelay);
+        Assert.Equal(TimeSpan.FromSeconds(2), retryPolicy.CalculateDelay(1));
+        Assert.Equal(TimeSpan.FromSeconds(4), retryPolicy.CalculateDelay(2));
+        Assert.Equal(TimeSpan.FromSeconds(5), retryPolicy.CalculateDelay(3));
         Assert.Empty(topology.Messages);
         Assert.Same(topology, transport.InitializedTopology);
         Assert.Same(bus, sameBus);
@@ -167,6 +177,25 @@ public sealed class TinyBusRegistrationTests
         }
 
         Assert.Throws<ArgumentOutOfRangeException>(RegisterTinyBus);
+        Assert.Empty(services);
+    }
+
+    [Fact]
+    public void Invalid_retry_delay_range_leaves_the_service_collection_unchanged()
+    {
+        var services = new ServiceCollection();
+
+        void RegisterTinyBus()
+        {
+            services.AddTinyBus<EmptyManifest>(bus =>
+            {
+                bus.Service("payments");
+                bus.RetryOptions.MinimumDelay = TimeSpan.FromSeconds(10);
+                bus.RetryOptions.MaximumDelay = TimeSpan.FromSeconds(5);
+            });
+        }
+
+        Assert.Throws<InvalidOperationException>(RegisterTinyBus);
         Assert.Empty(services);
     }
 

@@ -13,6 +13,8 @@ public sealed class TinyBusOptions
     internal TinyBusOptions(IServiceCollection services)
     {
         Services = services;
+        var retryOptions = new RetryOptions();
+        RetryOptions = retryOptions;
     }
 
     /// <summary>
@@ -20,6 +22,8 @@ public sealed class TinyBusOptions
     /// application collection only after TinyBus configuration succeeds.
     /// </summary>
     public IServiceCollection Services { get; }
+
+    public RetryOptions RetryOptions { get; }
 
     internal ServiceIdentity ServiceIdentity { get; private set; }
 
@@ -55,5 +59,7 @@ public sealed class TinyBusOptions
         {
             throw new InvalidOperationException("TinyBus requires a service identity. Configure it with bus.Service(name).");
         }
+
+        RetryOptions.Validate();
     }
 }

@@ -6,6 +6,8 @@ internal sealed class NativeTestDelivery : ITransportDelivery
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource abandoned =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<Exception> failed =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     internal NativeTestDelivery(MessageEnvelope envelope)
     {
@@ -18,10 +20,23 @@ internal sealed class NativeTestDelivery : ITransportDelivery
 
     internal Task Abandoned => abandoned.Task;
 
+    internal Task<Exception> Failed => failed.Task;
+
     public ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         completed.TrySetResult();
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask FailAsync(
+        Exception error,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        cancellationToken.ThrowIfCancellationRequested();
+        failed.TrySetResult(error);
 
         return ValueTask.CompletedTask;
     }

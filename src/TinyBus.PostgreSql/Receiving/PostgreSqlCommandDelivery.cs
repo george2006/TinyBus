@@ -46,7 +46,20 @@ internal sealed class PostgreSqlCommandDelivery : ITransportDelivery
         }
     }
 
+    public async ValueTask FailAsync(
+        Exception error,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        await ReleaseAsync(cancellationToken);
+    }
+
     public async ValueTask AbandonAsync(CancellationToken cancellationToken = default)
+    {
+        await ReleaseAsync(cancellationToken);
+    }
+
+    private async ValueTask ReleaseAsync(CancellationToken cancellationToken)
     {
         BeginSettlement();
 

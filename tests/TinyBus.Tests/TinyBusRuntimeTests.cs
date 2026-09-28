@@ -57,11 +57,12 @@ public sealed class TinyBusRuntimeTests
         await delivery.Completed.WaitAsync(TestTimeout);
         Assert.Same(envelope, pipeline.LastMessage);
         Assert.False(delivery.Abandoned.IsCompleted);
+        Assert.False(delivery.Failed.IsCompleted);
         await host.StopAsync();
     }
 
     [Fact]
-    public async Task Pipeline_failure_abandons_the_delivery()
+    public async Task Pipeline_failure_fails_the_delivery()
     {
         var transport = new NativeTestTransport();
         var pipelineError = new InvalidOperationException("Handler failed.");
@@ -74,12 +75,16 @@ public sealed class TinyBusRuntimeTests
         var secondDelivery = new NativeTestDelivery(secondEnvelope);
 
         transport.Enqueue(firstDelivery);
-        await firstDelivery.Abandoned.WaitAsync(TestTimeout);
+        var firstFailure = await firstDelivery.Failed.WaitAsync(TestTimeout);
         transport.Enqueue(secondDelivery);
 
-        await secondDelivery.Abandoned.WaitAsync(TestTimeout);
+        var secondFailure = await secondDelivery.Failed.WaitAsync(TestTimeout);
+        Assert.Same(pipelineError, firstFailure);
+        Assert.Same(pipelineError, secondFailure);
         Assert.False(firstDelivery.Completed.IsCompleted);
         Assert.False(secondDelivery.Completed.IsCompleted);
+        Assert.False(firstDelivery.Abandoned.IsCompleted);
+        Assert.False(secondDelivery.Abandoned.IsCompleted);
         await host.StopAsync();
     }
 
@@ -146,6 +151,7 @@ public sealed class TinyBusRuntimeTests
 
         await delivery.Abandoned.WaitAsync(TestTimeout);
         Assert.False(delivery.Completed.IsCompleted);
+        Assert.False(delivery.Failed.IsCompleted);
     }
 
     private static IHost CreateHost(

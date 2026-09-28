@@ -28,8 +28,10 @@ public static class TinyBusServiceCollectionExtensions
 
         var manifest = new TManifest();
         var topology = new ServiceTopology(options.ServiceIdentity, manifest.Messages);
+        var retryPolicy = options.RetryOptions.CreatePolicy();
         var runtimeSettings = new TinyBusRuntimeSettings(options.MaximumConcurrentMessages);
         registrations.AddSingleton(topology);
+        registrations.AddSingleton(retryPolicy);
         registrations.AddSingleton(runtimeSettings);
         registrations.AddSingleton<IBus>(CreateBus);
         registrations.AddSingleton<IHostedService>(CreateRuntime);

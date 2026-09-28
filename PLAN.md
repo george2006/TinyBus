@@ -22,6 +22,30 @@ direction: delivery retries and poison handling, PostgreSQL lease renewal for lo
 or durable event delivery with an independent outcome per consumer. Native AOT remains an
 architectural target until generated JSON metadata and published provider applications prove it.
 
+## Current feature: retries and dead letters
+
+The approved behavior distinguishes three delivery outcomes. Successful processing completes the
+delivery. A handler exception fails the delivery, consumes an attempt and eventually moves the
+message to dead-letter storage. Runtime shutdown abandons the delivery without consuming an attempt.
+
+One concrete `MessageRetryPolicy` in Core defines the maximum attempts and bounded linear delay.
+Applications configure it through `bus.RetryOptions`; no policy interface or delegate is introduced.
+Providers own durable attempt tracking, retry scheduling and the terminal transition.
+
+Planned slices:
+
+1. Add the Core retry configuration and distinguish failed processing from operational abandonment.
+   Implemented, verified and approved.
+2. Persist PostgreSQL attempts and delayed availability.
+3. Configure RabbitMQ 4.3 quorum-queue delayed retries with equivalent behavior.
+4. Move exhausted PostgreSQL messages to a separate dead-letter table in one database transaction.
+5. Configure RabbitMQ at-least-once dead lettering to a durable service dead-letter queue.
+6. Prove the same retry exhaustion journey against both real providers.
+
+Dead-letter inspection, repair and replay are deliberately deferred until the core transports and
+messaging patterns are complete. The first schema and broker topology must retain enough information
+to support that later operational feature without exposing an administrative abstraction now.
+
 ## Bootstrap feature
 
 Prove the core model before introducing distributed infrastructure:
