@@ -369,11 +369,26 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         IChannel channel,
         ServiceAddress serviceAddress)
     {
-        var delivery = await channel.BasicGetAsync(serviceAddress.QueueName, autoAck: true);
-        var received = Assert.IsType<BasicGetResult>(delivery);
-        var value = Encoding.UTF8.GetString(received.Body.Span);
+        var pollingInterval = TimeSpan.FromMilliseconds(50);
+        var timeout = TimeSpan.FromSeconds(5);
+        using var cancellation = new CancellationTokenSource(timeout);
 
-        return value;
+        while (true)
+        {
+            var delivery = await channel.BasicGetAsync(
+                serviceAddress.QueueName,
+                autoAck: true,
+                cancellation.Token);
+
+            if (delivery is not null)
+            {
+                var value = Encoding.UTF8.GetString(delivery.Body.Span);
+
+                return value;
+            }
+
+            await Task.Delay(pollingInterval, cancellation.Token);
+        }
     }
 
     private static async Task<BasicGetResult> ReadDeadLetterAsync(
