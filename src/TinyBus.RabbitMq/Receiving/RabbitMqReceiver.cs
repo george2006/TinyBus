@@ -14,10 +14,7 @@ namespace TinyBus.RabbitMq.Receiving;
 
 internal sealed class RabbitMqReceiver : IAsyncDisposable
 {
-    private const string CausationIdHeader = "tinybus-causation-id";
-    private const string ContractVersionHeader = "tinybus-contract-version";
-    private const string DeliveryCountHeader = "x-delivery-count";
-    private const string HeadersHeader = "tinybus-headers";
+    private const string BrokerDeliveryCountHeader = "x-delivery-count";
 
     private readonly IConnection connection;
     private readonly string queueName;
@@ -209,7 +206,9 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         var contractName = ReadContractName(properties);
         var contractVersion = ReadContractVersion(properties);
         var payload = Encoding.UTF8.GetString(delivery.Body.Span);
-        var causationId = ReadTextHeader(properties, CausationIdHeader);
+        var causationId = ReadTextHeader(
+            properties,
+            RabbitMqHeaderNames.CausationId);
         var headers = ReadHeaders(properties);
         var contract = new ContractIdentity(contractName, contractVersion);
         var envelope = new MessageEnvelope(
@@ -227,7 +226,7 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     {
         var headers = properties.Headers;
 
-        if (headers is null || !headers.TryGetValue(DeliveryCountHeader, out var value))
+        if (headers is null || !headers.TryGetValue(BrokerDeliveryCountHeader, out var value))
         {
             return 1;
         }
@@ -269,7 +268,9 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
 
     private static int ReadContractVersion(IReadOnlyBasicProperties properties)
     {
-        var value = ReadRequiredHeader(properties, ContractVersionHeader);
+        var value = ReadRequiredHeader(
+            properties,
+            RabbitMqHeaderNames.ContractVersion);
         var version = Convert.ToInt32(value, CultureInfo.InvariantCulture);
 
         return version;
@@ -278,7 +279,9 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     private static IReadOnlyDictionary<string, string>? ReadHeaders(
         IReadOnlyBasicProperties properties)
     {
-        var serializedHeaders = ReadTextHeader(properties, HeadersHeader);
+        var serializedHeaders = ReadTextHeader(
+            properties,
+            RabbitMqHeaderNames.MessageHeaders);
 
         if (serializedHeaders is null)
         {

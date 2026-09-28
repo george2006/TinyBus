@@ -12,8 +12,6 @@ namespace TinyBus.RabbitMq;
 
 internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 {
-    private const string CausationIdHeader = "tinybus-causation-id";
-    private const string ContractVersionHeader = "tinybus-contract-version";
     private const string DeadLetterExchangeArgument = "x-dead-letter-exchange";
     private const string DeadLetterRoutingKeyArgument = "x-dead-letter-routing-key";
     private const string DeadLetterStrategyArgument = "x-dead-letter-strategy";
@@ -21,7 +19,6 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
     private const string DelayedRetryMinimumArgument = "x-delayed-retry-min";
     private const string DelayedRetryTypeArgument = "x-delayed-retry-type";
     private const string DeliveryLimitArgument = "x-delivery-limit";
-    private const string HeadersHeader = "tinybus-headers";
     private const string OverflowArgument = "x-overflow";
     private const string QueueTypeArgument = "x-queue-type";
 
@@ -380,18 +377,18 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
     {
         var headers = new Dictionary<string, object?>
         {
-            [ContractVersionHeader] = message.Contract.Version
+            [RabbitMqHeaderNames.ContractVersion] = message.Contract.Version
         };
 
         if (message.CausationId is not null)
         {
-            headers[CausationIdHeader] = message.CausationId;
+            headers[RabbitMqHeaderNames.CausationId] = message.CausationId;
         }
 
         if (message.Headers is not null)
         {
             var serializedHeaders = JsonSerializer.Serialize(message.Headers);
-            headers[HeadersHeader] = serializedHeaders;
+            headers[RabbitMqHeaderNames.MessageHeaders] = serializedHeaders;
         }
 
         return headers;

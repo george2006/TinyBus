@@ -124,8 +124,8 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var received = Assert.IsType<BasicGetResult>(delivery);
         var payload = Encoding.UTF8.GetString(received.Body.Span);
         var expectedMessageId = messageId.ToString("D");
-        var causationId = ReadHeader(received, "tinybus-causation-id");
-        var serializedHeaders = ReadHeader(received, "tinybus-headers");
+        var causationId = ReadHeader(received, RabbitMqHeaderNames.CausationId);
+        var serializedHeaders = ReadHeader(received, RabbitMqHeaderNames.MessageHeaders);
         var receivedHeaders = JsonSerializer.Deserialize<Dictionary<string, string>>(serializedHeaders);
 
         Assert.Equal(envelope.Payload, payload);
@@ -133,7 +133,9 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         Assert.Equal(capture.Name, received.BasicProperties.Type);
         Assert.Equal(envelope.CorrelationId, received.BasicProperties.CorrelationId);
         Assert.True(received.BasicProperties.Persistent);
-        Assert.Equal(1, received.BasicProperties.Headers!["tinybus-contract-version"]);
+        Assert.Equal(
+            1,
+            received.BasicProperties.Headers![RabbitMqHeaderNames.ContractVersion]);
         Assert.Equal(envelope.CausationId, causationId);
         Assert.NotNull(receivedHeaders);
         Assert.Equal("north", receivedHeaders["tenant"]);
@@ -297,16 +299,17 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
             cancellation.Token);
         var payload = Encoding.UTF8.GetString(deadLetter.Body.Span);
         var messageId = envelope.MessageId.ToString("D");
-        var causationId = ReadHeader(deadLetter, "tinybus-causation-id");
-        var serializedHeaders = ReadHeader(deadLetter, "tinybus-headers");
+        var causationId = ReadHeader(deadLetter, RabbitMqHeaderNames.CausationId);
+        var serializedHeaders = ReadHeader(deadLetter, RabbitMqHeaderNames.MessageHeaders);
         var receivedHeaders = JsonSerializer.Deserialize<Dictionary<string, string>>(
             serializedHeaders);
-        var failedQueue = ReadHeader(deadLetter, "tinybus-failed-queue");
-        var exceptionType = ReadHeader(deadLetter, "tinybus-exception-type");
-        var exceptionMessage = ReadHeader(deadLetter, "tinybus-exception-message");
-        var exceptionDetails = ReadHeader(deadLetter, "tinybus-exception-details");
+        var failedQueue = ReadHeader(deadLetter, RabbitMqHeaderNames.FailedQueue);
+        var exceptionType = ReadHeader(deadLetter, RabbitMqHeaderNames.ExceptionType);
+        var exceptionMessage = ReadHeader(deadLetter, RabbitMqHeaderNames.ExceptionMessage);
+        var exceptionDetails = ReadHeader(deadLetter, RabbitMqHeaderNames.ExceptionDetails);
         var expectedExceptionType = typeof(InvalidOperationException).FullName;
-        var failedAttempt = deadLetter.BasicProperties.Headers!["tinybus-failed-attempt"];
+        var failedAttempt = deadLetter.BasicProperties.Headers![
+            RabbitMqHeaderNames.FailedAttempt];
         var activeDelivery = await channel.BasicGetAsync(
             serviceAddress.QueueName,
             autoAck: true);
@@ -316,7 +319,9 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         Assert.Equal(messageId, deadLetter.BasicProperties.MessageId);
         Assert.Equal(capture.Name, deadLetter.BasicProperties.Type);
         Assert.Equal(envelope.CorrelationId, deadLetter.BasicProperties.CorrelationId);
-        Assert.Equal(1, deadLetter.BasicProperties.Headers!["tinybus-contract-version"]);
+        Assert.Equal(
+            1,
+            deadLetter.BasicProperties.Headers![RabbitMqHeaderNames.ContractVersion]);
         Assert.Equal(envelope.CausationId, causationId);
         Assert.NotNull(receivedHeaders);
         Assert.Equal("north", receivedHeaders["tenant"]);

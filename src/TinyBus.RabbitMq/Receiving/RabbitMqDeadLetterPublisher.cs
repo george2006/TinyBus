@@ -8,12 +8,6 @@ namespace TinyBus.RabbitMq.Receiving;
 
 internal sealed class RabbitMqDeadLetterPublisher
 {
-    private const string ExceptionDetailsHeader = "tinybus-exception-details";
-    private const string ExceptionMessageHeader = "tinybus-exception-message";
-    private const string ExceptionTypeHeader = "tinybus-exception-type";
-    private const string FailedAttemptHeader = "tinybus-failed-attempt";
-    private const string FailedQueueHeader = "tinybus-failed-queue";
-
     private readonly IConnection connection;
     private readonly ServiceAddress serviceAddress;
 
@@ -58,11 +52,11 @@ internal sealed class RabbitMqDeadLetterPublisher
         var errorMessage = error.Message;
         var errorDetails = error.ToString();
 
-        headers[FailedQueueHeader] = serviceAddress.QueueName;
-        headers[FailedAttemptHeader] = message.Attempt;
-        headers[ExceptionTypeHeader] = errorTypeName;
-        headers[ExceptionMessageHeader] = errorMessage;
-        headers[ExceptionDetailsHeader] = errorDetails;
+        headers[RabbitMqHeaderNames.FailedQueue] = serviceAddress.QueueName;
+        headers[RabbitMqHeaderNames.FailedAttempt] = message.Attempt;
+        headers[RabbitMqHeaderNames.ExceptionType] = errorTypeName;
+        headers[RabbitMqHeaderNames.ExceptionMessage] = errorMessage;
+        headers[RabbitMqHeaderNames.ExceptionDetails] = errorDetails;
         properties.Headers = headers;
         properties.Persistent = true;
 
