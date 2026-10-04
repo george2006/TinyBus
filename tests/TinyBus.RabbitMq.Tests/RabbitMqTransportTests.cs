@@ -202,6 +202,61 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         await secondDelivery.CompleteAsync();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-number")]
+    public async Task Invalid_contract_version_remains_settleable(string? contractVersion)
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        var retryDelay = TimeSpan.Zero;
+        var retryPolicy = new MessageRetryPolicy(2, retryDelay, retryDelay);
+        await using var transport = CreateTransport(retryPolicy);
+        await transport.InitializeAsync(topology);
+        var messageId = Guid.NewGuid();
+
+        await using var connection = await rabbitMq.OpenConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+        var address = CommandAddress.From(capture);
+        await PublishInvalidContractVersionAsync(
+            channel,
+            address,
+            messageId,
+            capture.Name,
+            contractVersion);
+        var capacity = new ReceiveCapacity(maximum: 1, available: 1);
+
+        var firstBatch = await transport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+        var firstError = Assert.ThrowsAny<Exception>(firstDelivery.ReadEnvelope);
+        Assert.Equal(messageId, firstDelivery.MessageId);
+        Assert.Equal(1, firstDelivery.Attempt);
+        await firstDelivery.ScheduleRetryAsync(firstError, retryDelay);
+
+        var secondBatch = await transport.ReceiveAsync(capacity);
+        var secondDelivery = Assert.Single(secondBatch);
+        var secondError = Assert.ThrowsAny<Exception>(secondDelivery.ReadEnvelope);
+        Assert.Equal(messageId, secondDelivery.MessageId);
+        Assert.Equal(2, secondDelivery.Attempt);
+        await secondDelivery.DeadLetterAsync(secondError);
+
+        var serviceAddress = ServiceAddress.From(service);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var deadLetter = await ReadDeadLetterAsync(
+            channel,
+            serviceAddress,
+            cancellation.Token);
+        var failedAttempt = deadLetter.BasicProperties.Headers![
+            RabbitMqHeaderNames.FailedAttempt];
+        var expectedMessageId = messageId.ToString("D");
+
+        Assert.Equal(expectedMessageId, deadLetter.BasicProperties.MessageId);
+        Assert.Equal(2, failedAttempt);
+    }
+
     [Fact]
     public async Task Abandon_requeues_the_delivery()
     {
@@ -362,6 +417,37 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
             address.Exchange,
             address.RoutingKey,
             mandatory: true,
+            body);
+    }
+
+    private static async Task PublishInvalidContractVersionAsync(
+        IChannel channel,
+        CommandAddress address,
+        Guid messageId,
+        string contractName,
+        string? contractVersion)
+    {
+        var headers = new Dictionary<string, object?>();
+
+        if (contractVersion is not null)
+        {
+            headers[RabbitMqHeaderNames.ContractVersion] = contractVersion;
+        }
+
+        var properties = new BasicProperties
+        {
+            MessageId = messageId.ToString("D"),
+            Type = contractName,
+            Persistent = true,
+            Headers = headers
+        };
+        var body = Encoding.UTF8.GetBytes("{}");
+
+        await channel.BasicPublishAsync(
+            address.Exchange,
+            address.RoutingKey,
+            mandatory: true,
+            properties,
             body);
     }
 

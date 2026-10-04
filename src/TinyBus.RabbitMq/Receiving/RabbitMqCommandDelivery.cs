@@ -23,11 +23,11 @@ internal sealed class RabbitMqCommandDelivery : ITransportDelivery
         this.message = message;
     }
 
-    public Guid? MessageId => message.Envelope.MessageId;
+    public Guid? MessageId => message.MessageId;
 
     public MessageEnvelope ReadEnvelope()
     {
-        return message.Envelope;
+        return message.ReadEnvelope();
     }
 
     public int Attempt => message.Attempt;

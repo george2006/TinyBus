@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -147,14 +145,12 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         BasicDeliverEventArgs arguments)
     {
         var openedChannel = channel!;
-        var envelope = ReadEnvelope(arguments);
         var attempt = ReadAttempt(arguments.BasicProperties);
         var properties = CopyProperties(arguments.BasicProperties);
         var body = arguments.Body.ToArray();
         var message = new RabbitMqIncomingCommand(
             arguments.DeliveryTag,
             attempt,
-            envelope,
             properties,
             body);
         var delivery = new RabbitMqCommandDelivery(
@@ -199,29 +195,6 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         }
     }
 
-    private static MessageEnvelope ReadEnvelope(BasicDeliverEventArgs delivery)
-    {
-        var properties = delivery.BasicProperties;
-        var messageId = ReadMessageId(properties);
-        var contractName = ReadContractName(properties);
-        var contractVersion = ReadContractVersion(properties);
-        var payload = Encoding.UTF8.GetString(delivery.Body.Span);
-        var causationId = ReadTextHeader(
-            properties,
-            RabbitMqHeaderNames.CausationId);
-        var headers = ReadHeaders(properties);
-        var contract = new ContractIdentity(contractName, contractVersion);
-        var envelope = new MessageEnvelope(
-            messageId,
-            contract,
-            payload,
-            properties.CorrelationId,
-            causationId,
-            headers);
-
-        return envelope;
-    }
-
     private static int ReadAttempt(IReadOnlyBasicProperties properties)
     {
         var headers = properties.Headers;
@@ -244,100 +217,4 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         return attempt;
     }
 
-    private static Guid ReadMessageId(IReadOnlyBasicProperties properties)
-    {
-        if (!Guid.TryParse(properties.MessageId, out var messageId))
-        {
-            throw new InvalidOperationException(
-                "The RabbitMQ delivery does not contain a valid TinyBus message id.");
-        }
-
-        return messageId;
-    }
-
-    private static string ReadContractName(IReadOnlyBasicProperties properties)
-    {
-        if (string.IsNullOrWhiteSpace(properties.Type))
-        {
-            throw new InvalidOperationException(
-                "The RabbitMQ delivery does not contain a TinyBus contract name.");
-        }
-
-        return properties.Type;
-    }
-
-    private static int ReadContractVersion(IReadOnlyBasicProperties properties)
-    {
-        var value = ReadRequiredHeader(
-            properties,
-            RabbitMqHeaderNames.ContractVersion);
-        var version = Convert.ToInt32(value, CultureInfo.InvariantCulture);
-
-        return version;
-    }
-
-    private static IReadOnlyDictionary<string, string>? ReadHeaders(
-        IReadOnlyBasicProperties properties)
-    {
-        var serializedHeaders = ReadTextHeader(
-            properties,
-            RabbitMqHeaderNames.MessageHeaders);
-
-        if (serializedHeaders is null)
-        {
-            return null;
-        }
-
-        var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(serializedHeaders);
-
-        return headers;
-    }
-
-    private static string? ReadTextHeader(
-        IReadOnlyBasicProperties properties,
-        string name)
-    {
-        var headers = properties.Headers;
-
-        if (headers is null || !headers.TryGetValue(name, out var value))
-        {
-            return null;
-        }
-
-        if (value is byte[] bytes)
-        {
-            var text = Encoding.UTF8.GetString(bytes);
-            return text;
-        }
-
-        if (value is ReadOnlyMemory<byte> memory)
-        {
-            var text = Encoding.UTF8.GetString(memory.Span);
-            return text;
-        }
-
-        if (value is string textValue)
-        {
-            return textValue;
-        }
-
-        var converted = Convert.ToString(value, CultureInfo.InvariantCulture);
-
-        return converted;
-    }
-
-    private static object ReadRequiredHeader(
-        IReadOnlyBasicProperties properties,
-        string name)
-    {
-        var headers = properties.Headers;
-
-        if (headers is null || !headers.TryGetValue(name, out var value) || value is null)
-        {
-            throw new InvalidOperationException(
-                $"The RabbitMQ delivery does not contain the required '{name}' header.");
-        }
-
-        return value;
-    }
 }
