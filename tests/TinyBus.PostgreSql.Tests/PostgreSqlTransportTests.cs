@@ -153,6 +153,31 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
     }
 
     [Fact]
+    public async Task Receive_uses_the_configured_command_lease_duration()
+    {
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var commandLeaseDuration = TimeSpan.FromMinutes(2);
+        var transport = CreateTransport(commandLeaseDuration: commandLeaseDuration);
+        await transport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture.Contract, "{}");
+        await transport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 1, available: 1);
+
+        var batch = await transport.ReceiveAsync(capacity);
+
+        var delivery = Assert.Single(batch);
+        var remainingLeaseDuration = await ReadRemainingLeaseDurationAsync();
+        var minimumExpectedDuration = TimeSpan.FromMinutes(1);
+        Assert.InRange(
+            remainingLeaseDuration,
+            minimumExpectedDuration,
+            commandLeaseDuration);
+        await delivery.CompleteAsync();
+    }
+
+    [Fact]
     public async Task Abandon_makes_the_delivery_available_again()
     {
         await DropSchemaAsync();
@@ -329,11 +354,19 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         Assert.Equal(PostgresErrorCodes.UndefinedTable, exception.SqlState);
     }
 
-    private PostgreSqlTransport CreateTransport(string? connectionString = null)
+    private PostgreSqlTransport CreateTransport(
+        string? connectionString = null,
+        TimeSpan? commandLeaseDuration = null)
     {
         var selectedConnectionString = connectionString ?? postgreSql.ConnectionString;
+        var postgreSqlOptions = new PostgreSqlOptions();
+        var selectedLeaseDuration =
+            commandLeaseDuration ?? postgreSqlOptions.CommandLeaseDuration;
         var logger = NullLogger<PostgreSqlTransport>.Instance;
-        var transport = new PostgreSqlTransport(selectedConnectionString, logger);
+        var transport = new PostgreSqlTransport(
+            selectedConnectionString,
+            selectedLeaseDuration,
+            logger);
 
         return transport;
     }
@@ -450,6 +483,17 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         var count = Assert.IsType<long>(result);
 
         return count;
+    }
+
+    private async Task<TimeSpan> ReadRemainingLeaseDurationAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT claimed_until_utc - CURRENT_TIMESTAMP FROM tinybus.command_messages;";
+        var result = await command.ExecuteScalarAsync();
+        var remainingLeaseDuration = Assert.IsType<TimeSpan>(result);
+
+        return remainingLeaseDuration;
     }
 
     private async Task<StoredRetry> ReadStoredRetryAsync()

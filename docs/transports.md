@@ -68,6 +68,20 @@ Receivers claim ordered batches with `FOR UPDATE SKIP LOCKED`. Each claim has a 
 replicas and runtime workers act as competing consumers without processing the same available row.
 The runtime's available capacity controls the maximum claim batch size.
 
+The command lease lasts five minutes by default. Configure it for the longest expected handler
+execution plus settlement time:
+
+```csharp
+bus.UsePostgreSql(postgreSqlConnectionString, postgreSql =>
+{
+    postgreSql.CommandLeaseDuration = TimeSpan.FromMinutes(10);
+});
+```
+
+The provider does not renew active leases. When a lease expires, another receiver can reclaim the
+command even if its previous handler is still running. This is part of the at-least-once contract;
+handlers must tolerate repeated execution, and the lease should be sized for the workload.
+
 Completion deletes the claimed row. A retry updates its failed-attempt count and next availability.
 Dead-lettering inserts the complete failure record and removes the active row in one database
 transaction.

@@ -14,7 +14,6 @@ namespace TinyBus.PostgreSql;
 
 internal sealed class PostgreSqlTransport : ITransport
 {
-    private static readonly TimeSpan CommandLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ReceivePollingInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan ReceiveRecoveryInterval = TimeSpan.FromSeconds(1);
 
@@ -26,15 +25,20 @@ internal sealed class PostgreSqlTransport : ITransport
     private readonly ScheduleCommandMessageRetry scheduleCommandMessageRetry;
     private readonly DeadLetterCommandMessage deadLetterCommandMessage;
     private readonly AbandonCommandMessage abandonCommandMessage;
+    private readonly TimeSpan commandLeaseDuration;
     private readonly ILogger<PostgreSqlTransport> logger;
     private string? serviceName;
     private bool initialized;
 
     internal PostgreSqlTransport(
         string connectionString,
+        TimeSpan commandLeaseDuration,
         ILogger<PostgreSqlTransport> logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            commandLeaseDuration,
+            TimeSpan.Zero);
         ArgumentNullException.ThrowIfNull(logger);
 
         migrator = new PostgreSqlMigrator(connectionString);
@@ -45,6 +49,7 @@ internal sealed class PostgreSqlTransport : ITransport
         scheduleCommandMessageRetry = new ScheduleCommandMessageRetry(connectionString);
         deadLetterCommandMessage = new DeadLetterCommandMessage(connectionString);
         abandonCommandMessage = new AbandonCommandMessage(connectionString);
+        this.commandLeaseDuration = commandLeaseDuration;
         this.logger = logger;
     }
 
@@ -98,7 +103,7 @@ internal sealed class PostgreSqlTransport : ITransport
                 claimedMessages = await claimCommandMessages.ExecuteAsync(
                     serviceName!,
                     capacity.Available,
-                    CommandLeaseDuration,
+                    commandLeaseDuration,
                     cancellationToken);
             }
             catch (NpgsqlException exception) when (
