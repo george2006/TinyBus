@@ -10,9 +10,16 @@ namespace TinyBus;
 public interface ITransportDelivery
 {
     /// <summary>
-    /// Gets the transport-neutral message received by the runtime.
+    /// Gets the message identity when the transport can read it independently
+    /// from the complete envelope.
     /// </summary>
-    MessageEnvelope Envelope { get; }
+    Guid? MessageId { get; }
+
+    /// <summary>
+    /// Reads the transport-neutral message received by the runtime. A provider
+    /// may throw when the physical delivery cannot be decoded.
+    /// </summary>
+    MessageEnvelope ReadEnvelope();
 
     /// <summary>
     /// Gets the one-based processing attempt number.

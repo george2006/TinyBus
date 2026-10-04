@@ -92,7 +92,7 @@ internal sealed class DeliveryFailureProcessor
         string operation,
         Exception exception)
     {
-        var messageId = delivery.Envelope.MessageId;
+        var messageId = delivery.MessageId;
 
         logger.LogError(
             exception,

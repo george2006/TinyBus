@@ -2,6 +2,8 @@ namespace TinyBus.Tests;
 
 internal sealed class NativeTestDelivery : ITransportDelivery
 {
+    private readonly MessageEnvelope? envelope;
+    private readonly Exception? envelopeError;
     private readonly TaskCompletionSource completed =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource abandoned =
@@ -13,11 +15,24 @@ internal sealed class NativeTestDelivery : ITransportDelivery
 
     internal NativeTestDelivery(MessageEnvelope envelope, int attempt = 1)
     {
-        Envelope = envelope;
+        this.envelope = envelope;
+        MessageId = envelope.MessageId;
         Attempt = attempt;
     }
 
-    public MessageEnvelope Envelope { get; }
+    internal NativeTestDelivery(
+        Guid? messageId,
+        Exception envelopeError,
+        int attempt = 1)
+    {
+        ArgumentNullException.ThrowIfNull(envelopeError);
+
+        MessageId = messageId;
+        this.envelopeError = envelopeError;
+        Attempt = attempt;
+    }
+
+    public Guid? MessageId { get; }
 
     public int Attempt { get; }
 
@@ -28,6 +43,16 @@ internal sealed class NativeTestDelivery : ITransportDelivery
     internal Task<ScheduledRetry> RetryScheduled => retryScheduled.Task;
 
     internal Task<Exception> DeadLettered => deadLettered.Task;
+
+    public MessageEnvelope ReadEnvelope()
+    {
+        if (envelopeError is not null)
+        {
+            throw envelopeError;
+        }
+
+        return envelope!;
+    }
 
     public ValueTask CompleteAsync(CancellationToken cancellationToken = default)
     {

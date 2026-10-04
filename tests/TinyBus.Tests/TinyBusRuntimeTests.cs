@@ -92,6 +92,28 @@ public sealed class TinyBusRuntimeTests
     }
 
     [Fact]
+    public async Task Envelope_failure_schedules_the_delivery_without_entering_the_pipeline()
+    {
+        var transport = new NativeTestTransport();
+        var pipeline = new RecordingPipeline();
+        using var host = CreateHost(transport, pipeline, maximumConcurrentMessages: 1);
+        await host.StartAsync();
+        var messageId = Guid.NewGuid();
+        var envelopeError = new InvalidOperationException("Envelope is invalid.");
+        var delivery = new NativeTestDelivery(messageId, envelopeError);
+
+        transport.Enqueue(delivery);
+
+        var retry = await delivery.RetryScheduled.WaitAsync(TestTimeout);
+        Assert.Same(envelopeError, retry.Error);
+        Assert.Null(pipeline.LastMessage);
+        Assert.False(delivery.Completed.IsCompleted);
+        Assert.False(delivery.Abandoned.IsCompleted);
+        Assert.False(delivery.DeadLettered.IsCompleted);
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task Runtime_never_executes_more_than_the_configured_capacity()
     {
         var transport = new NativeTestTransport();

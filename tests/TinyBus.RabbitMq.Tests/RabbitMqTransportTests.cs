@@ -192,13 +192,13 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
 
         var firstDelivery = Assert.Single(firstBatch);
         Assert.Equal(1, firstDelivery.Attempt);
-        AssertEnvelope(first, firstDelivery.Envelope);
+        AssertEnvelope(first, firstDelivery.ReadEnvelope());
         await firstDelivery.CompleteAsync();
 
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
         Assert.Equal(1, secondDelivery.Attempt);
-        AssertEnvelope(second, secondDelivery.Envelope);
+        AssertEnvelope(second, secondDelivery.ReadEnvelope());
         await secondDelivery.CompleteAsync();
     }
 
@@ -224,7 +224,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var secondBatch = await transport.ReceiveAsync(capacity);
         var secondDelivery = Assert.Single(secondBatch);
         Assert.Equal(1, secondDelivery.Attempt);
-        AssertEnvelope(envelope, secondDelivery.Envelope);
+        AssertEnvelope(envelope, secondDelivery.ReadEnvelope());
         await secondDelivery.CompleteAsync();
     }
 
@@ -259,7 +259,7 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         var secondBatch = await transport.ReceiveAsync(capacity, retryCancellation.Token);
         var secondDelivery = Assert.Single(secondBatch);
         Assert.Equal(2, secondDelivery.Attempt);
-        AssertEnvelope(envelope, secondDelivery.Envelope);
+        AssertEnvelope(envelope, secondDelivery.ReadEnvelope());
         await secondDelivery.CompleteAsync();
     }
 

@@ -105,7 +105,8 @@ internal sealed class TinyBusRuntime : BackgroundService
     {
         try
         {
-            await pipeline.ExecuteAsync(delivery.Envelope, stoppingToken);
+            var envelope = delivery.ReadEnvelope();
+            await pipeline.ExecuteAsync(envelope, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -199,7 +200,7 @@ internal sealed class TinyBusRuntime : BackgroundService
         ITransportDelivery delivery,
         Exception exception)
     {
-        var messageId = delivery.Envelope.MessageId;
+        var messageId = delivery.MessageId;
 
         logger.LogError(
             exception,
@@ -212,7 +213,7 @@ internal sealed class TinyBusRuntime : BackgroundService
         string operation,
         Exception exception)
     {
-        var messageId = delivery.Envelope.MessageId;
+        var messageId = delivery.MessageId;
 
         logger.LogError(
             exception,
