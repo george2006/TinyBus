@@ -33,4 +33,9 @@ public interface ITransport
     ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
         ReceiveCapacity capacity,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stops accepting new deliveries so active deliveries can be settled safely.
+    /// </summary>
+    ValueTask StopAsync(CancellationToken cancellationToken = default);
 }

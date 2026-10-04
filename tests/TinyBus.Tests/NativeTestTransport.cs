@@ -61,4 +61,11 @@ internal sealed class NativeTestTransport : ITransport
 
         return deliveries;
     }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.CompletedTask;
+    }
 }

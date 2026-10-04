@@ -126,6 +126,13 @@ internal sealed class PostgreSqlTransport : ITransport
         }
     }
 
+    public ValueTask StopAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.CompletedTask;
+    }
+
     private static bool ShouldRecoverReceive(
         NpgsqlException exception,
         CancellationToken cancellationToken)

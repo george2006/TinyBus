@@ -22,6 +22,7 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     private readonly ILogger logger;
     private readonly SemaphoreSlim initializationLock = new(1, 1);
     private Channel<ITransportDelivery>? deliveries;
+    private AsyncEventingBasicConsumer? consumer;
     private IChannel? channel;
     private int maximumCapacity;
 
@@ -70,14 +71,37 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     {
         var openedChannel = channel;
         channel = null;
+        consumer = null;
         deliveries?.Writer.TryComplete();
 
         if (openedChannel is not null)
         {
-            await openedChannel.DisposeAsync();
+            await openedChannel.CloseAsync().ConfigureAwait(false);
+            await openedChannel.DisposeAsync().ConfigureAwait(false);
         }
 
         initializationLock.Dispose();
+    }
+
+    internal async ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        var activeChannel = channel;
+        var activeConsumer = consumer;
+
+        if (activeChannel is null || activeConsumer is null)
+        {
+            return;
+        }
+
+        var consumerTags = new List<string>(activeConsumer.ConsumerTags);
+
+        foreach (var consumerTag in consumerTags)
+        {
+            await activeChannel.BasicCancelAsync(
+                consumerTag,
+                noWait: false,
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async ValueTask EnsureStartedAsync(
@@ -123,23 +147,25 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
                 prefetchCount,
                 global: false,
                 cancellationToken);
-            var consumer = new AsyncEventingBasicConsumer(openedChannel);
-            consumer.ReceivedAsync += OnDeliveryReceivedAsync;
-            consumer.ShutdownAsync += OnConsumerShutdownAsync;
+            var startedConsumer = new AsyncEventingBasicConsumer(openedChannel);
+            startedConsumer.ReceivedAsync += OnDeliveryReceivedAsync;
+            startedConsumer.ShutdownAsync += OnConsumerShutdownAsync;
 
             maximumCapacity = requestedMaximum;
             deliveries = deliveryChannel;
+            consumer = startedConsumer;
             channel = openedChannel;
 
             await openedChannel.BasicConsumeAsync(
                 queueName,
                 autoAck: false,
-                consumer,
+                startedConsumer,
                 cancellationToken);
         }
         catch
         {
             channel = null;
+            consumer = null;
             deliveries = null;
             deliveryChannel.Writer.TryComplete();
             await openedChannel.DisposeAsync();

@@ -285,6 +285,39 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
     }
 
     [Fact]
+    public async Task Graceful_shutdown_does_not_consume_an_attempt()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var firstTransport = CreateTransport();
+        await firstTransport.InitializeAsync(topology);
+        var envelope = new MessageEnvelope(Guid.NewGuid(), capture, "{}");
+        await firstTransport.SendAsync(envelope);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var firstBatch = await firstTransport.ReceiveAsync(capacity);
+        var firstDelivery = Assert.Single(firstBatch);
+
+        await firstTransport.StopAsync();
+        await firstDelivery.AbandonAsync();
+        await firstTransport.DisposeAsync();
+
+        await using var secondTransport = CreateTransport();
+        await secondTransport.InitializeAsync(topology);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var secondBatch = await secondTransport.ReceiveAsync(
+            capacity,
+            cancellation.Token);
+        var secondDelivery = Assert.Single(secondBatch);
+
+        Assert.Equal(1, secondDelivery.Attempt);
+        AssertEnvelope(envelope, secondDelivery.ReadEnvelope());
+        await secondDelivery.CompleteAsync();
+    }
+
+    [Fact]
     public async Task Scheduled_retry_becomes_available_as_the_next_attempt()
     {
         var scenarioId = Guid.NewGuid();

@@ -99,6 +99,7 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
             return;
         }
 
+        await openedConnection.CloseAsync().ConfigureAwait(false);
         await openedConnection.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -110,6 +111,14 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
         var receiving = activeReceiver.ReceiveAsync(capacity, cancellationToken);
 
         return receiving;
+    }
+
+    public ValueTask StopAsync(CancellationToken cancellationToken = default)
+    {
+        var activeReceiver = GetReceiver();
+        var stopping = activeReceiver.StopAsync(cancellationToken);
+
+        return stopping;
     }
 
     public async ValueTask SendAsync(

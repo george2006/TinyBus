@@ -53,12 +53,13 @@ internal sealed class TinyBusRuntime : BackgroundService
         await starting.ConfigureAwait(false);
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         shutdownCancellationToken = cancellationToken;
-        var stopping = base.StopAsync(cancellationToken);
+        await transport.StopAsync(cancellationToken).ConfigureAwait(false);
 
-        return stopping;
+        var stopping = base.StopAsync(cancellationToken);
+        await stopping.ConfigureAwait(false);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
