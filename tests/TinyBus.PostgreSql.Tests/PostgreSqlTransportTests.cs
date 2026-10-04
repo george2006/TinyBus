@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using TinyBus.PostgreSql.Migrations;
 
@@ -266,11 +267,108 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiving);
     }
 
-    private PostgreSqlTransport CreateTransport()
+    [Fact]
+    public async Task Receive_resumes_after_a_transient_provider_outage()
     {
-        var transport = new PostgreSqlTransport(postgreSql.ConnectionString);
+        await DropSchemaAsync();
+        var capture = Command("payments.capture");
+        var topology = Topology("payments", capture);
+        var connectionString = ReadFastFailingConnectionString();
+        var transport = CreateTransport(connectionString);
+        await transport.InitializeAsync(topology);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var scenarioTimeout = TimeSpan.FromSeconds(30);
+        using var cancellation = new CancellationTokenSource(scenarioTimeout);
+        var receiving = transport.ReceiveAsync(capacity, cancellation.Token).AsTask();
+
+        await postgreSql.PauseProviderAsync();
+
+        try
+        {
+            var outageObservationDelay = TimeSpan.FromSeconds(3);
+            await Task.Delay(outageObservationDelay, cancellation.Token);
+
+            Assert.False(receiving.IsCompleted);
+        }
+        finally
+        {
+            await postgreSql.ResumeProviderAsync();
+        }
+
+        await WaitForProviderAsync(connectionString, cancellation.Token);
+        var messageId = Guid.NewGuid();
+        var envelope = new MessageEnvelope(messageId, capture.Contract, "{}");
+        await transport.SendAsync(envelope, cancellation.Token);
+
+        var deliveries = await receiving;
+        var delivery = Assert.Single(deliveries);
+        AssertEnvelope(envelope, delivery.ReadEnvelope());
+        await delivery.CompleteAsync(cancellation.Token);
+    }
+
+    [Fact]
+    public async Task Receive_propagates_a_nontransient_provider_failure()
+    {
+        await DropSchemaAsync();
+        var topology = Topology("payments");
+        var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        await DropCommandMessagesTableAsync();
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+
+        Task Receive()
+        {
+            var receiving = transport.ReceiveAsync(capacity);
+            var task = receiving.AsTask();
+
+            return task;
+        }
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(Receive);
+
+        Assert.Equal(PostgresErrorCodes.UndefinedTable, exception.SqlState);
+    }
+
+    private PostgreSqlTransport CreateTransport(string? connectionString = null)
+    {
+        var selectedConnectionString = connectionString ?? postgreSql.ConnectionString;
+        var logger = NullLogger<PostgreSqlTransport>.Instance;
+        var transport = new PostgreSqlTransport(selectedConnectionString, logger);
 
         return transport;
+    }
+
+    private string ReadFastFailingConnectionString()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(postgreSql.ConnectionString)
+        {
+            Timeout = 1
+        };
+        var connectionString = builder.ConnectionString;
+
+        return connectionString;
+    }
+
+    private static async Task WaitForProviderAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        var retryDelay = TimeSpan.FromMilliseconds(200);
+
+        while (true)
+        {
+            try
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(cancellationToken);
+                return;
+            }
+            catch (NpgsqlException exception) when (
+                exception.IsTransient && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+        }
     }
 
     private async Task ResetDatabaseAsync()
@@ -285,6 +383,14 @@ public sealed class PostgreSqlTransportTests : IClassFixture<PostgreSqlFixture>
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "DROP SCHEMA IF EXISTS tinybus CASCADE;";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task DropCommandMessagesTableAsync()
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP TABLE tinybus.command_messages;";
         await command.ExecuteNonQueryAsync();
     }
 

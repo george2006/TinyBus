@@ -26,4 +26,14 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
 
         return task;
     }
+
+    public Task PauseProviderAsync()
+    {
+        return container.PauseAsync();
+    }
+
+    public Task ResumeProviderAsync()
+    {
+        return container.UnpauseAsync();
+    }
 }

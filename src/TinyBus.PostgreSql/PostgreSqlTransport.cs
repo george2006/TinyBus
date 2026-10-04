@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Npgsql;
 using TinyBus;
 using TinyBus.PostgreSql.Migrations;
 using TinyBus.PostgreSql.Persistence;
@@ -14,6 +16,7 @@ internal sealed class PostgreSqlTransport : ITransport
 {
     private static readonly TimeSpan CommandLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ReceivePollingInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan ReceiveRecoveryInterval = TimeSpan.FromSeconds(1);
 
     private readonly PostgreSqlMigrator migrator;
     private readonly PostgreSqlTopologyReconciler topologyReconciler;
@@ -23,12 +26,16 @@ internal sealed class PostgreSqlTransport : ITransport
     private readonly ScheduleCommandMessageRetry scheduleCommandMessageRetry;
     private readonly DeadLetterCommandMessage deadLetterCommandMessage;
     private readonly AbandonCommandMessage abandonCommandMessage;
+    private readonly ILogger<PostgreSqlTransport> logger;
     private string? serviceName;
     private bool initialized;
 
-    internal PostgreSqlTransport(string connectionString)
+    internal PostgreSqlTransport(
+        string connectionString,
+        ILogger<PostgreSqlTransport> logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(logger);
 
         migrator = new PostgreSqlMigrator(connectionString);
         topologyReconciler = new PostgreSqlTopologyReconciler(connectionString);
@@ -38,6 +45,7 @@ internal sealed class PostgreSqlTransport : ITransport
         scheduleCommandMessageRetry = new ScheduleCommandMessageRetry(connectionString);
         deadLetterCommandMessage = new DeadLetterCommandMessage(connectionString);
         abandonCommandMessage = new AbandonCommandMessage(connectionString);
+        this.logger = logger;
     }
 
     public async ValueTask InitializeAsync(
@@ -83,11 +91,25 @@ internal sealed class PostgreSqlTransport : ITransport
 
         while (true)
         {
-            var claimedMessages = await claimCommandMessages.ExecuteAsync(
-                serviceName!,
-                capacity.Available,
-                CommandLeaseDuration,
-                cancellationToken);
+            IReadOnlyList<ClaimedCommandMessage> claimedMessages;
+
+            try
+            {
+                claimedMessages = await claimCommandMessages.ExecuteAsync(
+                    serviceName!,
+                    capacity.Available,
+                    CommandLeaseDuration,
+                    cancellationToken);
+            }
+            catch (NpgsqlException exception) when (
+                ShouldRecoverReceive(exception, cancellationToken))
+            {
+                logger.LogWarning(
+                    exception,
+                    "TinyBus PostgreSQL receiving was interrupted and will retry.");
+                await Task.Delay(ReceiveRecoveryInterval, cancellationToken);
+                continue;
+            }
 
             if (claimedMessages.Count > 0)
             {
@@ -97,6 +119,13 @@ internal sealed class PostgreSqlTransport : ITransport
 
             await Task.Delay(ReceivePollingInterval, cancellationToken);
         }
+    }
+
+    private static bool ShouldRecoverReceive(
+        NpgsqlException exception,
+        CancellationToken cancellationToken)
+    {
+        return exception.IsTransient && !cancellationToken.IsCancellationRequested;
     }
 
     private IReadOnlyList<ITransportDelivery> CreateDeliveries(

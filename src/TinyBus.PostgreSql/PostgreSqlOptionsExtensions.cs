@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using TinyBus;
 
 namespace TinyBus.PostgreSql;
@@ -16,9 +17,15 @@ public static class PostgreSqlOptionsExtensions
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        var transport = new PostgreSqlTransport(connectionString);
         var services = options.Services;
-        services.AddSingleton<ITransport>(transport);
+        Func<IServiceProvider, ITransport> createTransport = provider =>
+        {
+            var logger = provider.GetRequiredService<ILogger<PostgreSqlTransport>>();
+            var transport = new PostgreSqlTransport(connectionString, logger);
+
+            return transport;
+        };
+        services.AddSingleton(createTransport);
 
         return options;
     }
