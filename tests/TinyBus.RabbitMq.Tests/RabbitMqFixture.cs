@@ -46,4 +46,14 @@ public sealed class RabbitMqFixture : IAsyncLifetime
         await container.StopAsync();
         await container.StartAsync();
     }
+
+    public Task PauseProviderAsync()
+    {
+        return container.PauseAsync();
+    }
+
+    public Task ResumeProviderAsync()
+    {
+        return container.UnpauseAsync();
+    }
 }

@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using TinyBus;
 
 namespace TinyBus.RabbitMq;
@@ -20,7 +21,11 @@ public static class RabbitMqOptionsExtensions
         Func<IServiceProvider, ITransport> createTransport = provider =>
         {
             var retryPolicy = provider.GetRequiredService<MessageRetryPolicy>();
-            var transport = new RabbitMqTransport(connectionString, retryPolicy);
+            var logger = provider.GetRequiredService<ILogger<RabbitMqTransport>>();
+            var transport = new RabbitMqTransport(
+                connectionString,
+                retryPolicy,
+                logger);
             return transport;
         };
         services.AddSingleton(createTransport);

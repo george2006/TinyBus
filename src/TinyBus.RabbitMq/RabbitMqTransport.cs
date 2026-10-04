@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using TinyBus;
 using TinyBus.RabbitMq.Receiving;
@@ -12,6 +13,9 @@ namespace TinyBus.RabbitMq;
 
 internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 {
+    private static readonly TimeSpan NetworkRecoveryInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan RequestedHeartbeat = TimeSpan.FromSeconds(5);
+
     private const string DeadLetterExchangeArgument = "x-dead-letter-exchange";
     private const string DeadLetterRoutingKeyArgument = "x-dead-letter-routing-key";
     private const string DeadLetterStrategyArgument = "x-dead-letter-strategy";
@@ -24,17 +28,21 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 
     private readonly Uri connectionUri;
     private readonly MessageRetryPolicy retryPolicy;
+    private readonly ILogger<RabbitMqTransport> logger;
     private IConnection? connection;
     private RabbitMqReceiver? receiver;
 
     public RabbitMqTransport(
         string connectionString,
-        MessageRetryPolicy retryPolicy)
+        MessageRetryPolicy retryPolicy,
+        ILogger<RabbitMqTransport> logger)
     {
         ArgumentNullException.ThrowIfNull(retryPolicy);
+        ArgumentNullException.ThrowIfNull(logger);
 
         connectionUri = ReadConnectionUri(connectionString);
         this.retryPolicy = retryPolicy;
+        this.logger = logger;
     }
 
     public async ValueTask InitializeAsync(
@@ -63,7 +71,8 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
 
             receiver = new RabbitMqReceiver(
                 openedConnection,
-                serviceAddress);
+                serviceAddress,
+                logger);
             connection = openedConnection;
         }
         catch
@@ -134,7 +143,11 @@ internal sealed class RabbitMqTransport : ITransport, IAsyncDisposable
     {
         var connectionFactory = new ConnectionFactory
         {
-            Uri = connectionUri
+            Uri = connectionUri,
+            AutomaticRecoveryEnabled = true,
+            TopologyRecoveryEnabled = true,
+            NetworkRecoveryInterval = NetworkRecoveryInterval,
+            RequestedHeartbeat = RequestedHeartbeat
         };
         var connectionName = serviceAddress.QueueName;
         var openedConnection = await connectionFactory

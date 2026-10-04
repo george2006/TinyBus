@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 
@@ -406,6 +407,46 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiving);
     }
 
+    [Fact]
+    public async Task Receive_resumes_after_a_transient_provider_outage()
+    {
+        var scenarioId = Guid.NewGuid();
+        var scenario = scenarioId.ToString("N");
+        var service = new ServiceIdentity($"payments-{scenario}");
+        var capture = new ContractIdentity($"{scenario}.payments.capture", 1);
+        var topology = CreateTopology(service, capture);
+        await using var transport = CreateTransport();
+        await transport.InitializeAsync(topology);
+        var capacity = new ReceiveCapacity(maximum: 4, available: 1);
+        var scenarioTimeout = TimeSpan.FromSeconds(45);
+        using var cancellation = new CancellationTokenSource(scenarioTimeout);
+        var receiving = transport.ReceiveAsync(capacity, cancellation.Token).AsTask();
+
+        await rabbitMq.PauseProviderAsync();
+
+        try
+        {
+            var outageObservationDelay = TimeSpan.FromSeconds(12);
+            await Task.Delay(outageObservationDelay, cancellation.Token);
+
+            Assert.False(receiving.IsCompleted);
+        }
+        finally
+        {
+            await rabbitMq.ResumeProviderAsync();
+        }
+
+        await WaitForProviderAsync(cancellation.Token);
+        var messageId = Guid.NewGuid();
+        var envelope = new MessageEnvelope(messageId, capture, "{}");
+        await SendWhenRecoveredAsync(transport, envelope, cancellation.Token);
+
+        var deliveries = await receiving;
+        var delivery = Assert.Single(deliveries);
+        AssertEnvelope(envelope, delivery.ReadEnvelope());
+        await delivery.CompleteAsync(cancellation.Token);
+    }
+
     private static async Task PublishAsync(
         IChannel channel,
         CommandAddress address,
@@ -449,6 +490,45 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
             mandatory: true,
             properties,
             body);
+    }
+
+    private async Task WaitForProviderAsync(CancellationToken cancellationToken)
+    {
+        var retryDelay = TimeSpan.FromMilliseconds(200);
+
+        while (true)
+        {
+            try
+            {
+                await using var connection = await rabbitMq.OpenConnectionAsync();
+                return;
+            }
+            catch (BrokerUnreachableException) when (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+        }
+    }
+
+    private static async Task SendWhenRecoveredAsync(
+        RabbitMqTransport transport,
+        MessageEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var retryDelay = TimeSpan.FromMilliseconds(200);
+
+        while (true)
+        {
+            try
+            {
+                await transport.SendAsync(envelope, cancellationToken);
+                return;
+            }
+            catch (RabbitMQClientException) when (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+        }
     }
 
     private static async Task<string> ReadAsync(
@@ -525,9 +605,11 @@ public sealed class RabbitMqTransportTests : IClassFixture<RabbitMqFixture>
 
     private RabbitMqTransport CreateTransport(MessageRetryPolicy retryPolicy)
     {
+        var logger = NullLogger<RabbitMqTransport>.Instance;
         var transport = new RabbitMqTransport(
             rabbitMq.ConnectionString,
-            retryPolicy);
+            retryPolicy,
+            logger);
 
         return transport;
     }

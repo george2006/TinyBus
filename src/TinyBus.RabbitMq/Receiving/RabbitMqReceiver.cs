@@ -4,8 +4,10 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 using TinyBus;
 
 namespace TinyBus.RabbitMq.Receiving;
@@ -17,6 +19,7 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     private readonly IConnection connection;
     private readonly string queueName;
     private readonly RabbitMqDeadLetterPublisher deadLetterPublisher;
+    private readonly ILogger logger;
     private readonly SemaphoreSlim initializationLock = new(1, 1);
     private Channel<ITransportDelivery>? deliveries;
     private IChannel? channel;
@@ -24,13 +27,17 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
 
     internal RabbitMqReceiver(
         IConnection connection,
-        ServiceAddress serviceAddress)
+        ServiceAddress serviceAddress,
+        ILogger logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         this.connection = connection;
         queueName = serviceAddress.QueueName;
         deadLetterPublisher = new RabbitMqDeadLetterPublisher(
             connection,
             serviceAddress);
+        this.logger = logger;
     }
 
     internal async ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
@@ -39,18 +46,24 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
     {
         await EnsureStartedAsync(capacity.Maximum, cancellationToken);
 
-        var deliveryChannel = deliveries!;
-        var received = new List<ITransportDelivery>(capacity.Available);
-        var firstDelivery = await deliveryChannel.Reader.ReadAsync(cancellationToken);
-        received.Add(firstDelivery);
-
-        while (received.Count < capacity.Available
-            && deliveryChannel.Reader.TryRead(out var delivery))
+        while (true)
         {
-            received.Add(delivery);
-        }
+            var deliveryChannel = deliveries!;
 
-        return received;
+            try
+            {
+                var received = await ReadDeliveriesAsync(
+                    deliveryChannel,
+                    capacity.Available,
+                    cancellationToken);
+
+                return received;
+            }
+            catch (ChannelClosedException) when (ReceiveBufferWasReplaced(deliveryChannel))
+            {
+                continue;
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -100,13 +113,7 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var prefetchCount = checked((ushort)requestedMaximum);
-        var bufferOptions = new BoundedChannelOptions(requestedMaximum)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
-            SingleWriter = true
-        };
-        var deliveryChannel = Channel.CreateBounded<ITransportDelivery>(bufferOptions);
+        var deliveryChannel = CreateDeliveryChannel(requestedMaximum);
         var openedChannel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
         try
@@ -181,9 +188,77 @@ internal sealed class RabbitMqReceiver : IAsyncDisposable
         object sender,
         ShutdownEventArgs arguments)
     {
-        deliveries?.Writer.TryComplete();
+        var connectionRecoveryWillRestoreConsumer = !connection.IsOpen;
+
+        if (connectionRecoveryWillRestoreConsumer)
+        {
+            ReplaceReceiveBuffer();
+            logger.LogWarning(
+                arguments.Exception,
+                "TinyBus RabbitMQ receiving was interrupted and will recover.");
+
+            return Task.CompletedTask;
+        }
+
+        var exception = new OperationInterruptedException(arguments);
+        deliveries?.Writer.TryComplete(exception);
 
         return Task.CompletedTask;
+    }
+
+    private void ReplaceReceiveBuffer()
+    {
+        var replacement = CreateDeliveryChannel(maximumCapacity);
+        var interrupted = Interlocked.Exchange(ref deliveries, replacement);
+
+        if (interrupted is null)
+        {
+            return;
+        }
+
+        while (interrupted.Reader.TryRead(out _))
+        {
+        }
+
+        interrupted.Writer.TryComplete();
+    }
+
+    private bool ReceiveBufferWasReplaced(Channel<ITransportDelivery> observed)
+    {
+        var current = Volatile.Read(ref deliveries);
+
+        return !ReferenceEquals(observed, current);
+    }
+
+    private static async ValueTask<IReadOnlyList<ITransportDelivery>> ReadDeliveriesAsync(
+        Channel<ITransportDelivery> deliveryChannel,
+        int availableCapacity,
+        CancellationToken cancellationToken)
+    {
+        var received = new List<ITransportDelivery>(availableCapacity);
+        var firstDelivery = await deliveryChannel.Reader.ReadAsync(cancellationToken);
+        received.Add(firstDelivery);
+
+        while (received.Count < availableCapacity
+            && deliveryChannel.Reader.TryRead(out var delivery))
+        {
+            received.Add(delivery);
+        }
+
+        return received;
+    }
+
+    private static Channel<ITransportDelivery> CreateDeliveryChannel(int maximumCapacity)
+    {
+        var bufferOptions = new BoundedChannelOptions(maximumCapacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = true
+        };
+        var deliveryChannel = Channel.CreateBounded<ITransportDelivery>(bufferOptions);
+
+        return deliveryChannel;
     }
 
     private void EnsureCapacityMatches(int requestedMaximum)
