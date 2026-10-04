@@ -27,6 +27,8 @@ public interface ITransport
 
     /// <summary>
     /// Receives no more deliveries than the runtime's currently available capacity.
+    /// Transient provider interruptions pause this operation until receiving can resume or
+    /// cancellation is requested. Fatal configuration and topology failures are propagated.
     /// </summary>
     ValueTask<IReadOnlyList<ITransportDelivery>> ReceiveAsync(
         ReceiveCapacity capacity,
